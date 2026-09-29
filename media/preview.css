@@ -1,0 +1,90 @@
+/* Scale a wide schematic down to the preview column instead of letting it overflow. */
+svg.spice {
+  max-width: 100%;
+  height: auto;
+  /* A white card in every theme, like the sibling extensions: schematics are black line art,
+     and the padding and rounding make the white read as a deliberate figure in dark themes. */
+  background: #fff;
+  border-radius: 6px;
+  padding: 8px;
+  box-sizing: border-box;
+  /* Every rule below is scoped to svg.spice: these class names are generic, and the preview
+     is shared with the rest of the document. */
+  stroke: #000;
+  fill: none;
+}
+
+svg.spice text {
+  fill: #000;
+  stroke: none;
+  font: bold 10px "Courier New", Courier, monospace;
+}
+
+svg.spice .nodelabel {
+  text-anchor: middle;
+}
+
+svg.spice .endlabel {
+  text-anchor: end;
+}
+
+svg.spice .title,
+svg.spice .pinlabel {
+  font-weight: normal;
+}
+
+svg.spice .symbol {
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+svg.spice .connect,
+svg.spice .wire {
+  stroke-width: 1;
+  stroke-linecap: round;
+}
+
+svg.spice .detail,
+svg.spice .junction {
+  fill: #000;
+  stroke-linejoin: round;
+}
+
+.spice-figure {
+  margin: 1em 0;
+}
+
+.spice-figure figcaption {
+  margin-top: .5em;
+}
+
+.spice-align-left {
+  text-align: left;
+}
+
+.spice-align-center {
+  text-align: center;
+}
+
+.spice-align-right {
+  text-align: right;
+}
+
+.spice-error {
+  border-left: 3px solid var(--vscode-editorWarning-foreground, #b58900);
+  padding: .5em 1em;
+  margin: 1em 0;
+}
+
+.spice-error pre {
+  white-space: pre-wrap;
+  margin: 0;
+}
+
+.spice-loading {
+  margin: 1em 0;
+  padding: .5em 1em;
+  opacity: .7;
+  font-style: italic;
+}

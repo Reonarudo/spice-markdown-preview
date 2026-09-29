@@ -1,0 +1,169 @@
+<!--
+  Schematic symbols, one <g s:type> per part kind.
+
+  Derived from the analog skin of netlistsvg (MIT, Copyright (c) 2016 Neil Turley,
+  https://github.com/nturley/netlistsvg, lib/analog.svg); see THIRD_PARTY_NOTICES.md for
+  what changed. The format is netlistsvg's, so its other skins' symbols can be pasted in:
+
+  - s:width and s:height size the symbol; its origin is the top-left corner.
+  - <g s:pid s:x s:y s:position> is a pin. `top` pins are drawn above, `bottom` below,
+    `left` and `right` beside the symbol.
+  - <text s:attribute="ref|value"> is replaced by the part's name or value, or dropped
+    when the part has none.
+  - class="symbol" is a thick outline, "detail" a filled mark, "connect" a pin lead;
+    media/preview.css styles them.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:s="https://github.com/nturley/netlistsvg">
+
+<g s:type="gnd" s:width="20" s:height="30">
+  <path d="M0,15 H20 M3,20 H17 M7,25 H13 M10,15 V0" class="connect"/>
+  <g s:x="10" s:y="0" s:pid="A" s:position="top"/>
+</g>
+
+<g s:type="resistor" s:width="10" s:height="50">
+  <text x="15" y="15" s:attribute="ref">R1</text>
+  <text x="15" y="30" s:attribute="value">1k</text>
+  <path d="M0,10 V40 H10 V10 Z" class="symbol"/>
+  <path d="M5,0 V10 M5,40 V50" class="connect"/>
+  <g s:x="5" s:y="0" s:pid="A" s:position="top"/>
+  <g s:x="5" s:y="50" s:pid="B" s:position="bottom"/>
+</g>
+
+<g s:type="capacitor" s:width="30" s:height="50">
+  <text x="25" y="10" s:attribute="ref">C1</text>
+  <text x="25" y="45" s:attribute="value">1u</text>
+  <path d="M0,20 H30 M0,30 H30" class="symbol"/>
+  <path d="M15,0 V20 M15,30 V50" class="connect"/>
+  <g s:x="15" s:y="0" s:pid="A" s:position="top"/>
+  <g s:x="15" s:y="50" s:pid="B" s:position="bottom"/>
+</g>
+
+<g s:type="inductor" s:width="10" s:height="50">
+  <text x="15" y="15" s:attribute="ref">L1</text>
+  <text x="15" y="35" s:attribute="value">1m</text>
+  <path d="M5,5 A5,5 0 0 1 5,15 A5,5 0 0 1 5,25 A5,5 0 0 1 5,35 A5,5 0 0 1 5,45" class="symbol"/>
+  <path d="M5,0 V5 M5,45 V50" class="connect"/>
+  <g s:x="5" s:y="0" s:pid="A" s:position="top"/>
+  <g s:x="5" s:y="50" s:pid="B" s:position="bottom"/>
+</g>
+
+<!-- Changed: the model name is shown as the value. -->
+<g s:type="diode" s:width="20" s:height="50">
+  <text x="25" y="22" s:attribute="ref">D1</text>
+  <text x="25" y="37" s:attribute="value">1N4148</text>
+  <path d="M0,15 H20 L10,35 Z M0,35 H20" class="symbol"/>
+  <path d="M10,0 V15 M10,35 V50" class="connect"/>
+  <g s:x="10" s:y="0" s:pid="+" s:position="top"/>
+  <g s:x="10" s:y="50" s:pid="-" s:position="bottom"/>
+</g>
+
+<!-- Changed: + and - marks instead of a line through the circle. -->
+<g s:type="vsource" s:width="32" s:height="52">
+  <text x="37" y="20" s:attribute="ref">V1</text>
+  <text x="37" y="35" s:attribute="value">5</text>
+  <circle cx="16" cy="26" r="16" class="symbol"/>
+  <path d="M16,13 V21 M12,17 H20 M12,35 H20" class="connect"/>
+  <path d="M16,0 V10 M16,42 V52" class="connect"/>
+  <g s:x="16" s:y="0" s:pid="+" s:position="top"/>
+  <g s:x="16" s:y="52" s:pid="-" s:position="bottom"/>
+</g>
+
+<!-- Changed: an arrow from n+ to n-, the direction SPICE counts as positive current. -->
+<g s:type="isource" s:width="32" s:height="52">
+  <text x="37" y="20" s:attribute="ref">I1</text>
+  <text x="37" y="35" s:attribute="value">1m</text>
+  <circle cx="16" cy="26" r="16" class="symbol"/>
+  <path d="M16,15 V33" class="connect"/>
+  <path d="M11,31 L16,39 L21,31 Z" class="detail"/>
+  <path d="M16,0 V10 M16,42 V52" class="connect"/>
+  <g s:x="16" s:y="0" s:pid="+" s:position="top"/>
+  <g s:x="16" s:y="52" s:pid="-" s:position="bottom"/>
+</g>
+
+<!-- Changed: the model name is shown as the value, and the pins sit on the symbol's edge with
+     short leads, so that wires meet them exactly. -->
+<g s:type="npn" s:width="32" s:height="32">
+  <text x="35" y="14" s:attribute="ref">Q1</text>
+  <text x="35" y="28" s:attribute="value">2N3904</text>
+  <circle r="16" cx="16" cy="16" class="symbol"/>
+  <path d="M0,16 H12 M12,6 V26" class="connect"/>
+  <path d="m12,10 11,-8" class="connect"/>
+  <path d="m12,21 11,8" class="connect"/>
+  <path d="m23,29 -6,-1 3,-5 z" class="detail"/>
+  <path d="M23,2 V0 M23,29 V32" class="connect"/>
+  <g s:x="23" s:y="0" s:pid="C" s:position="top"/>
+  <g s:x="0" s:y="16" s:pid="B" s:position="left"/>
+  <g s:x="23" s:y="32" s:pid="E" s:position="bottom"/>
+</g>
+
+<!-- Changed: the model name is shown as the value, and the emitter pin is on top where the
+     arrow is drawn; netlistsvg names that leg the collector. -->
+<g s:type="pnp" s:width="32" s:height="32">
+  <text x="35" y="14" s:attribute="ref">Q1</text>
+  <text x="35" y="28" s:attribute="value">2N3906</text>
+  <circle r="16" cx="16" cy="16" class="symbol"/>
+  <path d="M0,16 H12 M12,6 V26" class="connect"/>
+  <path d="m12,10 11,-8" class="connect"/>
+  <path d="m12,21 11,8" class="connect"/>
+  <path d="m14,9 6,-1 -3,-5 z" class="detail"/>
+  <path d="M23,2 V0 M23,29 V32" class="connect"/>
+  <g s:x="23" s:y="0" s:pid="E" s:position="top"/>
+  <g s:x="0" s:y="16" s:pid="B" s:position="left"/>
+  <g s:x="23" s:y="32" s:pid="C" s:position="bottom"/>
+</g>
+
+<!-- New: enhancement-mode MOSFETs with the body terminal drawn, since SPICE always names it. -->
+<g s:type="nmos" s:width="32" s:height="40">
+  <text x="-3" y="10" s:attribute="ref" class="endlabel">M1</text>
+  <text x="-3" y="40" s:attribute="value" class="endlabel">nch</text>
+  <path d="M0,24 H7 M7,13 V27" class="connect"/>
+  <path d="M11,10 V16 M11,17 V23 M11,24 V30" class="symbol"/>
+  <path d="M11,13 H24 V0 M11,27 H24 V40 M11,20 H32" class="connect"/>
+  <path d="M12,20 l6,-3 v6 z" class="detail"/>
+  <g s:x="24" s:y="0" s:pid="D" s:position="top"/>
+  <g s:x="0" s:y="24" s:pid="G" s:position="left"/>
+  <g s:x="24" s:y="40" s:pid="S" s:position="bottom"/>
+  <g s:x="32" s:y="20" s:pid="B" s:position="right"/>
+</g>
+
+<!-- The source is on top, toward the positive supply, as PMOS is usually drawn. -->
+<g s:type="pmos" s:width="32" s:height="40">
+  <text x="-3" y="10" s:attribute="ref" class="endlabel">M1</text>
+  <text x="-3" y="40" s:attribute="value" class="endlabel">pch</text>
+  <path d="M0,24 H7 M7,13 V27" class="connect"/>
+  <path d="M11,10 V16 M11,17 V23 M11,24 V30" class="symbol"/>
+  <path d="M11,13 H24 V0 M11,27 H24 V40 M11,20 H32" class="connect"/>
+  <path d="M19,20 l-6,-3 v6 z" class="detail"/>
+  <g s:x="24" s:y="0" s:pid="S" s:position="top"/>
+  <g s:x="0" s:y="24" s:pid="G" s:position="left"/>
+  <g s:x="24" s:y="40" s:pid="D" s:position="bottom"/>
+  <g s:x="32" s:y="20" s:pid="B" s:position="right"/>
+</g>
+
+<!-- New: the same MOSFETs with the body tied to the source, drawn when SPICE connects them to one
+     node, as most circuits do. -->
+<g s:type="nmos3" s:width="32" s:height="40">
+  <text x="30" y="10" s:attribute="ref">M1</text>
+  <text x="30" y="36" s:attribute="value">nch</text>
+  <path d="M0,24 H7 M7,13 V27" class="connect"/>
+  <path d="M11,10 V16 M11,17 V23 M11,24 V30" class="symbol"/>
+  <path d="M11,13 H24 V0 M11,27 H24 V40 M11,20 H24 V27" class="connect"/>
+  <path d="M12,20 l6,-3 v6 z" class="detail"/>
+  <g s:x="24" s:y="0" s:pid="D" s:position="top"/>
+  <g s:x="0" s:y="24" s:pid="G" s:position="left"/>
+  <g s:x="24" s:y="40" s:pid="S" s:position="bottom"/>
+</g>
+
+<g s:type="pmos3" s:width="32" s:height="40">
+  <text x="30" y="10" s:attribute="ref">M1</text>
+  <text x="30" y="36" s:attribute="value">pch</text>
+  <path d="M0,24 H7 M7,13 V27" class="connect"/>
+  <path d="M11,10 V16 M11,17 V23 M11,24 V30" class="symbol"/>
+  <path d="M11,13 H24 V0 M11,27 H24 V40 M11,20 H24 V13" class="connect"/>
+  <path d="M19,20 l-6,-3 v6 z" class="detail"/>
+  <g s:x="24" s:y="0" s:pid="S" s:position="top"/>
+  <g s:x="0" s:y="24" s:pid="G" s:position="left"/>
+  <g s:x="24" s:y="40" s:pid="D" s:position="bottom"/>
+</g>
+
+</svg>

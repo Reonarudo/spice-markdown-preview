@@ -1,0 +1,2 @@
+# Preserve upstream license bytes on every platform.
+/licenses/** -text

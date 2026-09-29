@@ -1,0 +1,3 @@
+* Models for the verification document
+.model QP PNP(BF=150)
+.end

@@ -1,0 +1,11 @@
+**
+!dist/**
+!licenses/**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!media/icon.png
+!media/preview.css
+!media/screenshots/*.jpg
