@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — 2026-09-30
 
 - Draw `spice` fences as schematics in the Markdown preview, laid out by elkjs
   0.12.0 in a worker with a time limit set by `spice.layoutTimeout` (default 3 s).
