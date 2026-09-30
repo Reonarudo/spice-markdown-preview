@@ -147,3 +147,8 @@ test('a whole-file .lib before a section definition is still an include', () => 
   const { parts } = netlist('.lib models.bjt\n.lib local\n.model X NPN\n.endl\nQ1 c b e Q', { 'models.bjt': '.model Q PNP' });
   assert.equal(parts[0]!.kind, 'pnp');
 });
+
+test('includeReferences takes the dialect as an optional trailing argument, and ngspice is the default', () => {
+  const text = '.include a.lib\n.lib b.lib fast';
+  assert.deepEqual(includeReferences(text, 'models/x.lib', 'ngspice'), includeReferences(text, 'models/x.lib'));
+});

@@ -202,3 +202,8 @@ test('every part carries its catalogue element type beside the kind it is drawn 
     ['vcvs', 'block'], ['jfet', 'block'], ['vdmos', 'nmos'], ['behavioural-source', 'block']
   ]);
 });
+
+test('parseNetlist takes the dialect as an optional trailing argument, and ngspice is the default', () => {
+  const source = 'R1 in out 10k\nQ1 c b e BC547\n.model BC547 NPN';
+  assert.deepEqual(parseNetlist(source, undefined, 'ngspice'), parseNetlist(source));
+});

@@ -8,6 +8,7 @@
  */
 import { IncludePathError, resolveInclude } from './include-paths';
 import { elementTypeForLetter, type ElementTypeId, type SpellingHints } from './catalogue/index';
+import type { DialectId } from './catalogue/types';
 
 export type { ElementTypeId };
 
@@ -129,9 +130,10 @@ const BLOCK_PINS: Record<string, string[]> = {
 
 /**
  * Read a netlist. `includes` supplies the files `.include` and `.lib` name; without it, every
- * include is noted and skipped.
+ * include is noted and skipped. `dialect` names the generated parser the netlist is read with
+ * (ADR 0008); the reader below still reads every dialect as ngspice until that parser is wired in.
  */
-export function parseNetlist(source: string, includes?: IncludeSet): ParseResult {
+export function parseNetlist(source: string, includes?: IncludeSet, dialect: DialectId = 'ngspice'): ParseResult {
   try {
     return { ok: true, netlist: read(source, includes ?? { files: {}, unavailable: 'no files are available here' }) };
   } catch (error) {
@@ -151,7 +153,7 @@ export function parseNetlist(source: string, includes?: IncludeSet): ParseResult
  * The keys of every file a text includes, directly — for the loader, which follows them to load
  * the whole closure. Never throws; a malformed text simply yields what was found before the fault.
  */
-export function includeReferences(text: string, from: string): string[] {
+export function includeReferences(text: string, from: string, dialect: DialectId = 'ngspice'): string[] {
   const keys: string[] = [];
   try {
     const cards = toCards(text, from);

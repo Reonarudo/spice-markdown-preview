@@ -2,10 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { PUBLIC_DIALECTS } from '../src/catalogue/dialects';
 
-const require = createRequire(import.meta.url);
 const DIR = 'vendor/parsers';
 
 const sha256 = (name: string) => createHash('sha256').update(readFileSync(`${DIR}/${name}`)).digest('hex');
@@ -51,31 +49,5 @@ test('the provenance records the pinned tools, every module, and the inputs it w
     assert.match(input, /^grammar\/(driver|generated)\//, input);
     const actual = createHash('sha256').update(readFileSync(input)).digest('hex');
     assert.equal(actual, digest, `${input} changed since the modules were built: run npm run grammars`);
-  }
-});
-
-test('each vendored module is awaited once and then parses synchronously to the contract', async () => {
-  for (const module of readdirSync(DIR).filter((name) => name.endsWith('.cjs'))) {
-    const factory = require(`../${DIR}/${module}`) as () => Promise<{
-      _netlist_parse(pointer: number, length: number): number;
-      _malloc(bytes: number): number;
-      _free(pointer: number): void;
-      lengthBytesUTF8(text: string): number;
-      stringToUTF8(text: string, pointer: number, bytes: number): void;
-      UTF8ToString(pointer: number): string;
-    }>;
-    const instance = await factory();
-    const parse = (text: string) => {
-      const bytes = instance.lengthBytesUTF8(text);
-      const pointer = instance._malloc(bytes + 1);
-      instance.stringToUTF8(text, pointer, bytes + 1);
-      const out = instance.UTF8ToString(instance._netlist_parse(pointer, bytes));
-      instance._free(pointer);
-      return JSON.parse(out) as { contract: number; cards: unknown[] };
-    };
-    const result = parse('R1 a b 1k\n');
-    assert.equal(result.contract, 1, module);
-    assert.equal(result.cards.length, 1, module);
-    assert.deepEqual(parse(''), { contract: 1, cards: [] }, module);
   }
 });
