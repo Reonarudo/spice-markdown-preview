@@ -11,6 +11,8 @@ import type { DialectId } from './types';
 
 export interface Dialect {
   id: DialectId;
+  /** The base grammar the dialect's parser is composed from (ADR 0009): `grammar/<base>/`. */
+  base: 'spice' | 'spectre';
   /** Not an accepted `dialect` value; entered only by `simulator lang=spice` inside a Spectre fence. */
   internal?: true;
   /** Spellings of the ground node, compared case-insensitively unless `caseSensitive`. */
@@ -36,6 +38,7 @@ const SPICE3_LETTERS = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', '
 export const DIALECTS: Readonly<Record<DialectId, Dialect>> = {
   ngspice: {
     id: 'ngspice',
+    base: 'spice',
     ground: ['0', 'gnd'],
     globalNodePatterns: [],
     globalStatement: true,
@@ -44,6 +47,7 @@ export const DIALECTS: Readonly<Record<DialectId, Dialect>> = {
   },
   ltspice: {
     id: 'ltspice',
+    base: 'spice',
     ground: ['0', 'gnd'],
     globalNodePatterns: ['^\\$G_'],
     globalStatement: true,
@@ -52,6 +56,7 @@ export const DIALECTS: Readonly<Record<DialectId, Dialect>> = {
   },
   pspice: {
     id: 'pspice',
+    base: 'spice',
     // PSpice documents only `0`; `gnd` is kept as ground for continuity with today's reader (unconfirmed).
     ground: ['0', 'gnd'],
     // `$D_HI`, `$D_LO` and `$D_NC` are treated as global nodes until their meaning is confirmed (#1197).
@@ -62,6 +67,7 @@ export const DIALECTS: Readonly<Record<DialectId, Dialect>> = {
   },
   hspice: {
     id: 'hspice',
+    base: 'spice',
     ground: ['0', 'gnd', 'gnd!', 'ground', '!gnd'],
     globalNodePatterns: [],
     globalStatement: true,
@@ -70,6 +76,7 @@ export const DIALECTS: Readonly<Record<DialectId, Dialect>> = {
   },
   xyce: {
     id: 'xyce',
+    base: 'spice',
     ground: ['0'],
     groundWhenReplaceGround: ['gnd', 'gnd!', 'ground'],
     globalNodePatterns: ['^\\$G'],
@@ -79,6 +86,7 @@ export const DIALECTS: Readonly<Record<DialectId, Dialect>> = {
   },
   spectre: {
     id: 'spectre',
+    base: 'spectre',
     ground: ['0'],
     groundFromGlobal: true,
     globalNodePatterns: [],
@@ -97,6 +105,7 @@ export const DIALECTS: Readonly<Record<DialectId, Dialect>> = {
   },
   'spectre-spice': {
     id: 'spectre-spice',
+    base: 'spice',
     internal: true,
     ground: ['0'],
     groundFromGlobal: true,

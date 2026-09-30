@@ -1,2 +1,4 @@
 # Preserve upstream license bytes on every platform.
 /licenses/** -text
+# Composed grammars are written by scripts/grammars/compose.ts; review the diff, never edit them.
+/grammar/generated/** linguist-generated=true
