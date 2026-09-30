@@ -111,3 +111,7 @@ dist/
 
 # VS Code downloaded by @vscode/test-electron
 .vscode-test/
+
+# Internal design docs (glossary, ADRs) stay off GitHub
+/CONTEXT.md
+/docs/adr/
