@@ -99,10 +99,12 @@ async function includedFiles(render) {
   assert.match(html, />R7<\/text>/);
   assert.match(html, />4k7<\/text>/);
 
-  // Typing in the fence does not reload the files: the next render is immediate.
+  // Editing the fence updates the drawing. Initial file-create notifications can still
+  // invalidate includes asynchronously, so wait for them before checking cache reuse.
   const edit = new vscode.WorkspaceEdit();
   edit.replace(good.uri, new vscode.Range(0, 0, good.lineCount, 0), '```spice\n.include "models/q.lib"\n.inc stage.cir\nQ1 c b e Q\nR1 b 0 22k\n```\n');
   assert.ok(await vscode.workspace.applyEdit(edit));
+  await ready(good, />22k<\/text>/);
   assert.match(await render(good), />22k<\/text>/);
   await good.save();
 
