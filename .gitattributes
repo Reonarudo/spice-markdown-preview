@@ -4,3 +4,5 @@
 /grammar/generated/** linguist-generated=true
 # Generated parsers are built by scripts/grammars.sh and pinned by vendor/parsers/SHA256SUMS; keep their bytes on every OS.
 /vendor/parsers/** -text
+# Grammar sources are hashed and composed verbatim on every platform.
+/grammar/** text eol=lf

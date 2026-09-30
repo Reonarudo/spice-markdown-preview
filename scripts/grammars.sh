@@ -59,7 +59,9 @@ if [ -z "${EMSDK_PYTHON:-}" ]; then
   export EMSDK_PYTHON
 fi
 
-emcc_line=$("$EMCC" --version 2>&1 | head -n 1)
+# A fresh emsdk may emit sanity-check diagnostics before its version line.
+emcc_output=$("$EMCC" --version 2>&1) || fail "emcc --version failed: $emcc_output"
+emcc_line=$(printf '%s\n' "$emcc_output" | sed -n '/^emcc /{p;q;}')
 # Homebrew builds Emscripten from the release tag and reports "6.0.9-git"; emsdk reports "6.0.9".
 emcc_version=$(printf '%s\n' "$emcc_line" | sed -n 's/^emcc (.*) \([0-9][0-9.]*\)\(-git\)\{0,1\}$/\1/p')
 [ "$emcc_version" = "$WANT_EMCC" ] || fail "need Emscripten $WANT_EMCC, found: $emcc_line"
