@@ -50,6 +50,122 @@ than shown: a transistor whose model is not defined (drawn as NPN or NMOS), a
 subcircuit that is not defined (pins numbered), a bipolar substrate node, and
 `K` coupling.
 
+## Examples
+
+Each of these is a complete fence; paste one into a Markdown file and open the
+preview. Values, models and analysis lines are written as for ngspice.
+
+An LED with its series resistor — the smallest useful netlist:
+
+````markdown
+```spice
+V1 in 0 5
+R1 in led 330
+D1 led 0 RED
+.model RED D
+```
+````
+
+A second-order RLC low-pass; `.ac` is skipped, only the parts are drawn:
+
+````markdown
+```spice
+* RLC low-pass, f0 ≈ 16 kHz
+V1 in 0 AC 1
+L1 in out 1m
+C1 out 0 100n
+R1 out 0 1k
+.ac dec 20 100 1meg
+```
+````
+
+A common-emitter amplifier with its bias network, coupling and bypass
+capacitors:
+
+````markdown
+```spice
+VCC vcc 0 12
+VIN in 0 SIN(0 10m 1k)
+C1 in b 10u
+R1 vcc b 47k
+R2 b 0 10k
+Q1 c b e BC547
+RC vcc c 4.7k
+RE e 0 1k
+CE e 0 100u
+C2 c out 10u
+RL out 0 100k
+.model BC547 NPN
+```
+````
+
+A full-wave bridge rectifier with a smoothing capacitor; the AC source floats,
+so no ground symbol is attached to it:
+
+````markdown
+```spice
+VAC ac1 ac2 SIN(0 12 50)
+D1 ac1 plus 1N4007
+D2 ac2 plus 1N4007
+D3 0 ac1 1N4007
+D4 0 ac2 1N4007
+C1 plus 0 1000u
+RL plus 0 1k
+.model 1N4007 D
+```
+````
+
+A CMOS NAND gate: the `.model` lines decide which transistors are PMOS, and the
+fourth node of each MOSFET is drawn as a body pin only when it differs from the
+source:
+
+````markdown
+```spice {caption="NAND2 in a 180 nm process" align="center"}
+VDD vdd 0 1.8
+VA a 0 PULSE(0 1.8 0 10p 10p 1n 2n)
+VB b 0 PULSE(0 1.8 0 10p 10p 2n 4n)
+M1 out a vdd vdd pch W=2u L=180n
+M2 out b vdd vdd pch W=2u L=180n
+M3 out a n1 0 nch W=1u L=180n
+M4 n1 b 0 0 nch W=1u L=180n
+CL out 0 5f
+.model nch NMOS
+.model pch PMOS
+```
+````
+
+A subcircuit used twice — a buffer feeding a non-inverting stage. The `.subckt`
+line names the pins of both boxes; what is inside the subcircuit is not drawn:
+
+````markdown
+```spice
+V1 in 0 SIN(0 1 1k)
+X1 in mid vcc vee mid opamp
+R1 mid inv 10k
+R2 inv out 47k
+X2 mid inv vcc vee out opamp
+RL out 0 10k
+VCC vcc 0 15
+VEE 0 vee 15
+.subckt opamp inp inn vp vn out
+E1 out 0 inp inn 100k
+.ends
+```
+````
+
+Continuation lines and every comment style ngspice accepts:
+
+````markdown
+```spice
+* Voltage divider with a long source line
+V1 in 0 PULSE(0 5
++ 0 1n 1n
++ 1u 2u)          ; the pulse spans three lines
+R1 in out 10k     $ upper leg
+R2 out 0 10k      // lower leg
+```
+````
+
 ## Included files
 
 `.include`, `.inc` and `.lib` read files, as SPICE does, so a model library can
