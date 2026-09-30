@@ -35,10 +35,7 @@ export class IncludeFiles implements vscode.Disposable {
 
   constructor() {
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
-    const changed = (uri: vscode.Uri): void => {
-      console.log('[DEBUG-spice-watch] event', uri.fsPath, this.cache.has(uri.fsPath), this.loading.has(uri.fsPath));
-      this.invalidate(uri);
-    };
+    const changed = (uri: vscode.Uri): void => this.invalidate(uri);
     this.subscriptions.push(
       watcher,
       watcher.onDidChange(changed),
@@ -109,7 +106,6 @@ export class IncludeFiles implements vscode.Disposable {
       this.loading.delete(path);
     }
     if (this.disposed) return;
-    console.log('[DEBUG-spice-watch] loaded', path, file);
     this.store(path, file);
     this.refresh();
   }

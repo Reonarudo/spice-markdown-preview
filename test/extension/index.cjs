@@ -72,10 +72,6 @@ async function includedFiles(render) {
   assert(root, 'the test workspace is set');
   assert(vscode.workspace.isTrusted, 'the test workspace is trusted');
   const docs = path.join(root, 'docs');
-  await fs.mkdir(path.join(docs, 'models'), { recursive: true });
-  await fs.writeFile(path.join(docs, 'models', 'q.lib'), '* transistor models\n.model Q PNP\n.end\n');
-  await fs.writeFile(path.join(docs, 'stage.cir'), 'R7 c out 4k7\n');
-  await fs.writeFile(path.join(root, 'outside.lib'), '.model Q NPN\n');
   const write = async (name, body) => {
     const file = path.join(docs, name);
     await fs.writeFile(file, '```spice\n' + body + '\n```\n');
