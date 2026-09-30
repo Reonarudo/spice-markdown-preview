@@ -2,3 +2,5 @@
 /licenses/** -text
 # Composed grammars are written by scripts/grammars/compose.ts; review the diff, never edit them.
 /grammar/generated/** linguist-generated=true
+# Generated parsers are built by scripts/grammars.sh and pinned by vendor/parsers/SHA256SUMS; keep their bytes on every OS.
+/vendor/parsers/** -text

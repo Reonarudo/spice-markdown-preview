@@ -115,3 +115,6 @@ dist/
 # Internal design docs (glossary, ADRs) stay off GitHub
 /CONTEXT.md
 /docs/adr/
+
+# Intermediate C and objects written by scripts/grammars.sh; only vendor/parsers/ is committed
+/build/

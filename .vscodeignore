@@ -1,5 +1,8 @@
 **
 !dist/**
+!vendor/parsers/*.cjs
+!vendor/parsers/SHA256SUMS
+!vendor/parsers/provenance.json
 !licenses/**
 !package.json
 !README.md

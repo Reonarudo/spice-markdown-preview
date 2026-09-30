@@ -1,0 +1,13 @@
+{
+  "tools": { "bison": "3.8.2", "flex": "2.6.4", "emscripten": "6.0.9" },
+  "script": "scripts/grammars.sh",
+  "modules": ["ngspice.cjs"],
+  "inputs": {
+    "grammar/driver/driver.c": "f8450e03be3741f0ff83d81d77f9fe7e44b27271766f13a7f9168fd50dc306db",
+    "grammar/driver/json.c": "685bdb236b72934f6d6fd957926e6b772eec10b49b9e4e163b236e747a418be8",
+    "grammar/driver/driver.h": "79a0a947cab80a67b61ae439307b288a06be7c1090e9e3ebfceaf69684019153",
+    "grammar/driver/json.h": "5f67e8e608f113e56e430e8d0905884678b2c62bb4e3c887360aa91c764e101e",
+    "grammar/generated/ngspice.l": "fd7778ede08a0f40c7041e7187ad36f2a885d1ad255287df0b8e339c07369cbc",
+    "grammar/generated/ngspice.y": "68f9f7e36284744b3cb71d6303220ba7ce4e7640fd9591e67ded95eb799e27c4"
+  }
+}

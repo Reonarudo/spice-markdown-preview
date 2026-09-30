@@ -32,6 +32,40 @@ jobs:
         with:
           name: spice-markdown-preview-${{ runner.os }}-vsix
           path: '*.vsix'
+  # Rebuilds every vendored parser with the pinned tools and fails on any byte that differs from
+  # what is committed. This runner's build is the reference: when it differs from a local build,
+  # its artifact is what gets committed (see dev.md).
+  grammars:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      # Ubuntu 24.04 packages GNU Bison 3.8.2 and GNU flex 2.6.4, the pinned versions.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bison flex
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 6.0.9
+          actions-cache-folder: emsdk-cache
+      - run: npm ci
+      - run: npm run grammars
+        env:
+          BISON: bison
+          FLEX: flex
+          EMCC: emcc
+      # `add -N` makes a module the build wrote for the first time show up in the diff too.
+      - run: git add -N grammar/generated vendor/parsers && git diff --exit-code -- grammar/generated vendor/parsers
+      - if: failure()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: rebuilt-parsers
+          path: |
+            vendor/parsers
+            build/grammars/**/*.c
+            build/grammars/**/*.h
   minimum-vscode:
     runs-on: ubuntu-latest
     steps:

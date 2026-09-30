@@ -43,3 +43,41 @@ npm package 1.0.2 (git `eb9dc546beae573d98635a7b9d9c5d12af3f695b`, npm integrity
 each schematic. Its MIT license and attribution are in `licenses/XMLDOM-LICENSE`.
 npm integrity
 `sha512-5AXjrcMClTryPe9LgZrygpB1lj7s0S9E0+W+AHaVKAVyHanafK86iPSvG5xHVSp/jC+VH1UXu0TAEmY279xH7A==`.
+
+## Generated parsers (`vendor/parsers/`)
+
+Each `vendor/parsers/<dialect>.cjs` is a netlist scanner and parser for one SPICE
+dialect, generated from this repository's own grammars (`grammar/generated/<dialect>.l`
+and `.y`, composed from `grammar/spice/`, `grammar/spectre/`, `grammar/dialects/` and
+the element catalogue) and the shared driver in `grammar/driver/`, then compiled to
+WebAssembly and inlined into one CommonJS file. `scripts/grammars.sh` builds them with
+GNU flex 2.6.4, GNU Bison 3.8.2 and Emscripten 6.0.9; `vendor/parsers/provenance.json`
+records those versions and the SHA-256 of every input, `vendor/parsers/SHA256SUMS` pins
+the modules, and the test suite checks both. The grammars and driver are MIT licensed
+with the rest of the extension; the generated modules also contain the following.
+
+### flex 2.6.4 scanner skeleton
+
+The scanner half of each module is flex's output: flex's own skeleton code plus the
+tables generated from the grammar. flex is distributed under a BSD-style license by The
+Flex Project and The Regents of the University of California; the full text is in
+`licenses/flex-COPYING`. Source: <https://github.com/westes/flex>.
+
+### GNU Bison 3.8.2 parser skeleton
+
+The parser half of each module is Bison's output: the `yacc.c` skeleton plus the tables
+generated from the grammar. The skeleton is copyright the Free Software Foundation and
+licensed GPL-3.0-or-later **with the Bison special exception**, which permits
+distributing a larger work containing the skeleton "under terms of your choice, so long
+as that work isn't itself a parser generator using the skeleton or a modified version
+thereof as a parser skeleton". This extension is not a parser generator, so the modules
+are distributed under the extension's MIT license as the exception allows. The full
+exception text is at the head of every file Bison generates. Source:
+<https://www.gnu.org/software/bison/>.
+
+### Emscripten 6.0.9
+
+The JavaScript loader and the linked runtime (including `emmalloc`) in each module
+contain Emscripten code, available under the MIT and University of Illinois/NCSA
+licenses; the full text is in `licenses/emscripten-LICENSE`. Source:
+<https://github.com/emscripten-core/emscripten>.

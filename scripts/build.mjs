@@ -11,7 +11,10 @@ await build({
   format: 'cjs',
   // `vscode` is provided by the host. ELK, xmldom and the symbol file are bundled into
   // `worker.js`, so the packaged extension ships no node_modules (see THIRD_PARTY_NOTICES.md).
-  external: ['vscode'],
+  // The generated parsers stay external and ship as `vendor/parsers/<dialect>.cjs`, so the same
+  // relative require resolves from `src/` in development and from `dist/` in the packaged
+  // extension, and a dialect that is never used is never loaded.
+  external: ['vscode', '../vendor/parsers/*'],
   loader: { '.svg': 'text' },
   // esbuild reprints the already-minified ELK in expanded form, doubling it to 3.6 MB. Removing
   // whitespace alone brings it back to 1.8 MB and keeps identifiers readable in stack traces.

@@ -72,6 +72,7 @@
     "test": "node --import tsx --test test/*.test.ts",
     "build": "node scripts/build.mjs",
     "grammars:compose": "tsx scripts/grammars/compose.ts",
+    "grammars": "npm run grammars:compose && sh scripts/grammars.sh",
     "vscode:prepublish": "npm run build",
     "package": "vsce package --no-dependencies",
     "test:extension": "node scripts/test-extension.mjs",

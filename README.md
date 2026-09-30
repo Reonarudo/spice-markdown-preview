@@ -135,6 +135,9 @@ Symbols live in `src/skin/symbols.svg`; `test/schematic.test.ts` traces every
 wire of a set of reference circuits and fails if a drawing connects the wrong
 pins.
 
+The netlist parsers in `vendor/parsers/` are generated and committed; rebuilding
+them needs flex, Bison and Emscripten and is described in `dev.md`.
+
 ## License
 
 MIT for this extension. Bundled elkjs is EPL-2.0; symbols and layout code are
