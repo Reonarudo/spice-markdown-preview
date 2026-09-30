@@ -20,15 +20,15 @@ function error(source: string) {
 
 test('two-terminal passives map their nodes to pins A and B and keep the rest as the value', () => {
   assert.deepEqual(parts('R1 in out 10k\nC1 out 0 100n\nL1 a b 1m IC=0'), [
-    { ref: 'R1', kind: 'resistor', pins: [{ name: 'A', node: 'in' }, { name: 'B', node: 'out' }], value: '10k', line: 1 },
-    { ref: 'C1', kind: 'capacitor', pins: [{ name: 'A', node: 'out' }, { name: 'B', node: '0' }], value: '100n', line: 2 },
-    { ref: 'L1', kind: 'inductor', pins: [{ name: 'A', node: 'a' }, { name: 'B', node: 'b' }], value: '1m IC=0', line: 3 }
+    { ref: 'R1', type: 'resistor', kind: 'resistor', pins: [{ name: 'A', node: 'in' }, { name: 'B', node: 'out' }], value: '10k', line: 1 },
+    { ref: 'C1', type: 'capacitor', kind: 'capacitor', pins: [{ name: 'A', node: 'out' }, { name: 'B', node: '0' }], value: '100n', line: 2 },
+    { ref: 'L1', type: 'inductor', kind: 'inductor', pins: [{ name: 'A', node: 'a' }, { name: 'B', node: 'b' }], value: '1m IC=0', line: 3 }
   ]);
 });
 
 test('sources keep their whole specification, parentheses included, and may omit it', () => {
   const [v, i, bare] = parts('V1 in 0 SIN(0 1 1k)\nI1 0 x DC 1m\nV2 a b');
-  assert.deepEqual(v, { ref: 'V1', kind: 'vsource', pins: [{ name: '+', node: 'in' }, { name: '-', node: '0' }], value: 'SIN(0 1 1k)', line: 1 });
+  assert.deepEqual(v, { ref: 'V1', type: 'vsource', kind: 'vsource', pins: [{ name: '+', node: 'in' }, { name: '-', node: '0' }], value: 'SIN(0 1 1k)', line: 1 });
   assert.equal(i!.kind, 'isource');
   assert.equal(i!.value, 'DC 1m');
   assert.equal(bare!.value, '');
@@ -42,13 +42,13 @@ test('every spelling of ground is node 0, and node names are case-insensitive', 
 
 test('a diode maps anode and cathode to + and -, with its model as the value', () => {
   assert.deepEqual(parts('D1 a k 1N4148')[0], {
-    ref: 'D1', kind: 'diode', pins: [{ name: '+', node: 'a' }, { name: '-', node: 'k' }], value: '1N4148', line: 1
+    ref: 'D1', type: 'diode', kind: 'diode', pins: [{ name: '+', node: 'a' }, { name: '-', node: 'k' }], value: '1N4148', line: 1
   });
 });
 
 test('a bipolar transistor is NPN or PNP by its .model, defined anywhere in the fence', () => {
   const { parts: [npn, pnp], notes } = netlist('Q1 c b e BC547\nQ2 c b e BC557\n.model BC547 NPN(BF=300)\n.model BC557 PNP');
-  assert.deepEqual(npn, { ref: 'Q1', kind: 'npn', pins: [{ name: 'C', node: 'c' }, { name: 'B', node: 'b' }, { name: 'E', node: 'e' }], value: 'BC547', line: 1 });
+  assert.deepEqual(npn, { ref: 'Q1', type: 'bjt', kind: 'npn', pins: [{ name: 'C', node: 'c' }, { name: 'B', node: 'b' }, { name: 'E', node: 'e' }], value: 'BC547', line: 1 });
   assert.equal(pnp!.kind, 'pnp');
   assert.deepEqual(notes, []);
 });
@@ -70,7 +70,7 @@ test('a bipolar transistor may name a substrate node, which is noted and not dra
 test('a MOSFET has four pins and is NMOS or PMOS by its .model', () => {
   const [n, p] = parts('M1 d g s b nch W=1u L=100n\nM2 d g s b pch\n.model nch NMOS\n.model pch PMOS level=1');
   assert.deepEqual(n, {
-    ref: 'M1', kind: 'nmos',
+    ref: 'M1', type: 'mosfet', kind: 'nmos',
     pins: [{ name: 'D', node: 'd' }, { name: 'G', node: 'g' }, { name: 'S', node: 's' }, { name: 'B', node: 'b' }],
     value: 'nch W=1u L=100n', line: 1
   });
@@ -88,7 +88,7 @@ test('a subcircuit instance is a block with its ports named from .subckt, whose 
   ].join('\n'));
   assert.deepEqual(found.map((part) => part.ref), ['X1', 'R9']);
   assert.deepEqual(found[0], {
-    ref: 'X1', kind: 'block', title: 'filter',
+    ref: 'X1', type: 'subcircuit', kind: 'block', title: 'filter',
     pins: [{ name: 'a', node: 'in' }, { name: 'b', node: 'out' }, { name: 'gnd', node: '0' }],
     value: 'R=1k', line: 1
   });
@@ -194,4 +194,11 @@ test('never throws, whatever the input', () => {
   for (const input of inputs) {
     assert.doesNotThrow(() => parseNetlist(input), JSON.stringify(input));
   }
+});
+
+test('every part carries its catalogue element type beside the kind it is drawn as', () => {
+  const found = parts('E1 a 0 b 0 2\nJ1 d g s NJ\nM1 d g s 0 PWR\nB1 x 0 V=1\n.model PWR VDMOS(Rg=3)');
+  assert.deepEqual(found.map((part) => [part.type, part.kind]), [
+    ['vcvs', 'block'], ['jfet', 'block'], ['vdmos', 'nmos'], ['behavioural-source', 'block']
+  ]);
 });

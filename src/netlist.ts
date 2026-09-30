@@ -7,6 +7,9 @@
  * caller supplies, and noted and skipped when it supplies none.
  */
 import { IncludePathError, resolveInclude } from './include-paths';
+import { elementTypeForLetter, type ElementTypeId, type SpellingHints } from './catalogue/index';
+
+export type { ElementTypeId };
 
 export type Kind =
   | 'resistor' | 'capacitor' | 'inductor' | 'diode'
@@ -24,6 +27,8 @@ export interface Pin {
 export interface Part {
   /** The element name as written, e.g. `R1`. */
   ref: string;
+  /** The element type from the catalogue, e.g. `vcvs`; `kind` is what is drawn for it. */
+  type: ElementTypeId;
   kind: Kind;
   pins: Pin[];
   /** Everything after the nodes, e.g. `10k`, `SIN(0 1 1k)` or a model name. May be empty. */
@@ -406,6 +411,12 @@ function toPart(card: Card, models: Map<string, string>, subcircuits: Map<string
   const line = card.line;
   const origin = card.file ? { file: card.file } : {};
   const at = capitalise(where(card));
+  // This reader reads ngspice only; the catalogue's ngspice spellings name the element type.
+  const type = (hints: SpellingHints = {}): ElementTypeId => {
+    const found = elementTypeForLetter('ngspice', letter, hints);
+    if (found === undefined) throw new ParseError(`Element type ${letter} (${ref}) is not supported.${titleHint(card)}`, head);
+    return found;
+  };
 
   const nodes = (count: number): string[] => {
     const found = args.slice(0, count).filter((token) => !token.text.includes('='));
@@ -430,18 +441,19 @@ function toPart(card: Card, models: Map<string, string>, subcircuits: Map<string
       const [a, b] = nodes(2);
       needValue(2, 'a value');
       const kind = letter === 'R' ? 'resistor' : letter === 'C' ? 'capacitor' : 'inductor';
-      return { ref, kind, pins: [{ name: 'A', node: a! }, { name: 'B', node: b! }], value: rest(2), line, ...origin };
+      return { ref, type: type(), kind, pins: [{ name: 'A', node: a! }, { name: 'B', node: b! }], value: rest(2), line, ...origin };
     }
     case 'D': {
       const [anode, cathode] = nodes(2);
       needValue(2, 'a model name');
-      return { ref, kind: 'diode', pins: [{ name: '+', node: anode! }, { name: '-', node: cathode! }], value: rest(2), line, ...origin };
+      return { ref, type: type(), kind: 'diode', pins: [{ name: '+', node: anode! }, { name: '-', node: cathode! }], value: rest(2), line, ...origin };
     }
     case 'V':
     case 'I': {
       const [plus, minus] = nodes(2);
       return {
         ref,
+        type: type(),
         kind: letter === 'V' ? 'vsource' : 'isource',
         pins: [{ name: '+', node: plus! }, { name: '-', node: minus! }],
         value: rest(2),
@@ -458,12 +470,13 @@ function toPart(card: Card, models: Map<string, string>, subcircuits: Map<string
       const [c, b, e, substrate] = nodes(count);
       needValue(count, 'a model name');
       const model = args[count]!.text;
-      const type = models.get(model.toLowerCase());
-      if (type === undefined) notes.push(`${at}: model ${model} of ${ref} is not defined here; drawn as NPN.`);
+      const modelType = models.get(model.toLowerCase());
+      if (modelType === undefined) notes.push(`${at}: model ${model} of ${ref} is not defined here; drawn as NPN.`);
       if (substrate !== undefined) notes.push(`${at}: the substrate connection of ${ref} is not drawn.`);
       return {
         ref,
-        kind: type === 'pnp' ? 'pnp' : 'npn',
+        type: type(modelType === undefined ? {} : { modelType }),
+        kind: modelType === 'pnp' ? 'pnp' : 'npn',
         pins: [{ name: 'C', node: c! }, { name: 'B', node: b! }, { name: 'E', node: e! }],
         value: rest(count),
         line,
@@ -474,11 +487,12 @@ function toPart(card: Card, models: Map<string, string>, subcircuits: Map<string
       const [d, g, s, b] = nodes(4);
       needValue(4, 'a model name');
       const model = args[4]!.text;
-      const type = models.get(model.toLowerCase());
-      if (type === undefined) notes.push(`${at}: model ${model} of ${ref} is not defined here; drawn as NMOS.`);
+      const modelType = models.get(model.toLowerCase());
+      if (modelType === undefined) notes.push(`${at}: model ${model} of ${ref} is not defined here; drawn as NMOS.`);
       return {
         ref,
-        kind: type === 'pmos' ? 'pmos' : 'nmos',
+        type: type(modelType === undefined ? {} : { modelType }),
+        kind: modelType === 'pmos' ? 'pmos' : 'nmos',
         pins: [{ name: 'D', node: d! }, { name: 'G', node: g! }, { name: 'S', node: s! }, { name: 'B', node: b! }],
         value: rest(4),
         line,
@@ -498,7 +512,7 @@ function toPart(card: Card, models: Map<string, string>, subcircuits: Map<string
       }
       if (!ports) notes.push(`${at}: subcircuit ${name} of ${ref} is not defined here; its pins are numbered.`);
       const pins = args.slice(0, count).map((token, index) => ({ name: ports?.[index] ?? String(index + 1), node: normalise(token.text) }));
-      return { ref, kind: 'block', pins, value: rest(positional), title: name, line, ...origin };
+      return { ref, type: type(), kind: 'block', pins, value: rest(positional), title: name, line, ...origin };
     }
     case 'K':
       notes.push(`${at}: coupling ${ref} (${rest(0)}) is not drawn.`);
@@ -512,6 +526,7 @@ function toPart(card: Card, models: Map<string, string>, subcircuits: Map<string
       const names = BLOCK_PINS[letter]!;
       return {
         ref,
+        type: type(),
         kind: 'block',
         pins: found.map((node, index) => ({ name: names[index]!, node })),
         value: rest(block.nodes),
