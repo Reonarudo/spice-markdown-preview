@@ -14,7 +14,7 @@ struct json {
   int in_card;      /* a card is open */
   int tokens_open;  /* the open card's tokens array has started */
   int tokens;       /* tokens written in the open card */
-  int model;        /* the open card is `.model`: keep the name, the type and the `level` pair only */
+  int model;        /* the open card is `.model`: keep its bare words and the `level` pair only */
   int failed;       /* the error was written; nothing else may follow */
 };
 

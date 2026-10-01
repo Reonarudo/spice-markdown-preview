@@ -50,7 +50,7 @@ export interface DirectiveCard extends Span {
   kind: 'directive';
   /** Lower-cased, with its leading dot in the SPICE dialects, e.g. `.model`, `.include`. */
   name: string;
-  /** `.model` is trimmed to name, bare type and the `level` pair; every other directive keeps all. */
+  /** `.model` keeps its bare words (name, type, flags such as `pchan`) and the `level` pair only; every other directive keeps all. */
   tokens: Token[];
 }
 

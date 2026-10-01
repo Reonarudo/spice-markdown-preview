@@ -8,7 +8,7 @@ import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { DIALECTS } from '../src/catalogue/dialects';
 import type { Card, ParserOutput, Token } from '../src/parser/contract';
 import { loadParser, parse, type ParserFactory } from '../src/parser/registry';
@@ -184,7 +184,7 @@ test('a keyword used as a node name is still classified as a keyword; the catalo
 
 // --- .model ------------------------------------------------------------------------------------------
 
-test('.model is trimmed to its name, its bare type and the level pair, whether the parameters are bare, parenthesised or continued', () => {
+test('.model keeps its bare words and the level pair only, whether the parameters are bare, parenthesised or continued', () => {
   assert.deepEqual(cards([
     '.model bc547 npn(bf=100 level=2)',
     '.MODEL N1 NPN LEVEL=4',
@@ -198,7 +198,7 @@ test('.model is trimmed to its name, its bare type and the level pair, whether t
     '.model bc547 npn P:level=2',
     '.model N1 NPN P:LEVEL=4',
     '.model nand1 d_nand',
-    '.model vd vdmos',
+    '.model vd vdmos pchan',
     '.model r1 r',
     '.model m1 nmos P:level=49'
   ]);
@@ -282,7 +282,8 @@ function decks(directory: string): string[] {
 }
 
 test('every deck in the ngspice corpus parses without a structural error once its title line is dropped, with the card counts it was added with', () => {
-  const found = decks(CORPUS).map((path) => relative(CORPUS, path)).sort();
+  // Keys are written with `/` whatever the platform's separator is.
+  const found = decks(CORPUS).map((path) => relative(CORPUS, path).split(sep).join('/')).sort();
   assert.deepEqual(found, Object.keys(EXPECTED).sort(), 'every corpus file has an entry in EXPECTED, and vice versa');
   for (const name of found) {
     // The first line of a SPICE deck is its title; a fence has none (ADR 0006).

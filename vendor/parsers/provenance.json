@@ -4,9 +4,9 @@
   "modules": ["ngspice.cjs"],
   "inputs": {
     "grammar/driver/driver.c": "41cce01538195fb0231d6b18a57aea2732b24ca73e307377a695225c17efc623",
-    "grammar/driver/json.c": "e91a7736d4ca57ca9ecad94309cf2302ca34b8eca88186d1aac35f5aae975b61",
+    "grammar/driver/json.c": "09bc49b0ed0ddf8ad7443d4451951c549cfdbcbf20ecd62ab9874df3ebec577a",
     "grammar/driver/driver.h": "314ae1d5e4494cb7ea32e5f895c7c0306e36c180cae01c6e24ab4bdb1e48cabb",
-    "grammar/driver/json.h": "6be8f54fed4cc5af3694a63b19e97cf6f8ae3668f694898f8255d58c9958afaf",
+    "grammar/driver/json.h": "f41f0281730ca9c0b20008ca4c6fa6a1f757dcbb525b1e9c5d91ae95eb5d4aba",
     "grammar/generated/ngspice.l": "a483f602b8e88601e5a44cc5d07ebdfb51a3e22d2d5035d0565963c0033a5510",
     "grammar/generated/ngspice.y": "bf59ca48ac72ad923960011531493a816096056c4a9e32bb2b3c1063220e9780"
   }

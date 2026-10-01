@@ -126,8 +126,7 @@ static void open_token(struct json *j, const char *class, const char *text, int 
 
 void json_token(struct json *j, const char *class, char *text, int line, int column, int end) {
   if (j->failed || !j->in_card) { free(text); return; }
-  /* A `.model` card keeps its name and its bare type word only. */
-  if (j->model && j->tokens >= 2) { free(text); return; }
+  /* A `.model` card keeps its bare words — name, type, flags such as `pchan` — and drops parameters below. */
   if (j->model && j->tokens == 1) {
     char *paren = strchr(text, '(');
     if (paren) { end -= (int)strlen(paren); *paren = 0; }
