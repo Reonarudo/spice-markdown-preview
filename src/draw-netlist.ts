@@ -1,14 +1,17 @@
 import { parseNetlist, type IncludeSet } from './netlist';
+import type { DialectId } from './catalogue/types';
 import { layoutSchematic, type Layout, type Symbols } from './schematic';
 import { drawSchematic } from './draw';
 import type { RenderResult } from './renderer';
 
 /**
  * Read, lay out and draw one netlist: everything the worker does, kept free of the worker so tests
- * can call it directly.
+ * can call it directly. `dialect` names the parser the netlist is read with; the caller has loaded it.
  */
-export async function renderNetlist(source: string, symbols: Symbols, layout: Layout, includes?: IncludeSet): Promise<RenderResult> {
-  const parsed = parseNetlist(source, includes);
+export async function renderNetlist(
+  source: string, symbols: Symbols, layout: Layout, includes?: IncludeSet, dialect: DialectId = 'ngspice'
+): Promise<RenderResult> {
+  const parsed = parseNetlist(source, includes, dialect);
   if (!parsed.ok) {
     return { status: 'failure', message: parsed.message, line: parsed.line, column: parsed.column };
   }

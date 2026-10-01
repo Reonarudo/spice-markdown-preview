@@ -64,3 +64,17 @@ test('a netlist over 64 KB is refused before it reaches the worker', async () =>
     runtime.dispose();
   }
 });
+
+test('a fence names its dialect, and a dialect with no parser comes back as a failure report the worker survives', async () => {
+  const runtime = await createRuntime(resolve('dist'));
+  try {
+    assert.equal(runtime.render('R1 a 0 1k', undefined, 'ngspice').status, 'success');
+    assert.deepEqual(runtime.render('R1 a 0 1k', undefined, 'bogus' as never), {
+      status: 'failure',
+      message: 'The bogus parser could not be loaded: not a dialect'
+    });
+    assert.equal(runtime.render('R1 a 0 1k').status, 'success');
+  } finally {
+    runtime.dispose();
+  }
+});

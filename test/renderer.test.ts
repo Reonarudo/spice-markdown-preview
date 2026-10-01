@@ -57,3 +57,13 @@ test('the cache keeps the 96 most recently used netlists', () => {
   render('n1');
   assert.deepEqual(runtime.seen, ['n1']);
 });
+
+test('the same netlist in another dialect is laid out again, not served from the cache', () => {
+  const runtime = stubRuntime();
+  const render = createRenderer(runtime);
+  render('R1 a 0 1');
+  render('R1 a 0 1', undefined, 'ngspice');
+  render('R1 a 0 1', undefined, 'ltspice');
+  render('R1 a 0 1', undefined, 'ltspice');
+  assert.deepEqual(runtime.seen, ['R1 a 0 1', 'R1 a 0 1', 'R1 a 0 1']);
+});

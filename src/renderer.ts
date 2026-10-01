@@ -2,6 +2,7 @@ import { Worker } from 'node:worker_threads';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import type { IncludeSet } from './netlist';
+import type { DialectId } from './catalogue/types';
 
 const capacity = 4_000_000;
 const maxSource = 64_000;
@@ -16,17 +17,19 @@ export type RenderResult =
   | { status: 'timeout'; budget: number }
   | { status: 'unavailable'; reason: string };
 
-/** What the host posts to the worker: the fence and the files it includes. */
+/** What the host posts to the worker: the fence, the files it includes and the dialect it is read in. */
 export interface Request {
   source: string;
   includes?: IncludeSet;
+  /** Absent means ngspice, the default dialect. */
+  dialect?: DialectId;
 }
 
 /** Included files with a cheap identity for the cache: equal identities mean equal files. */
 export type Includes = IncludeSet & { identity: string };
 
 export interface Runtime {
-  render(source: string, includes?: IncludeSet): RenderResult;
+  render(source: string, includes?: IncludeSet, dialect?: DialectId): RenderResult;
   dispose(): void;
 }
 
@@ -89,7 +92,7 @@ export async function createRuntime(directory: string, options: RuntimeOptions =
   });
 
   return {
-    render(source, includes) {
+    render(source, includes, dialect) {
       if (source.length > maxSource) {
         return { status: 'failure', message: 'The netlist exceeds the 64 KB limit.' };
       }
@@ -102,7 +105,10 @@ export async function createRuntime(directory: string, options: RuntimeOptions =
       }
       const budget = budgetFor();
       Atomics.store(state, 0, 0);
-      current.postMessage((includes ? { source, includes } : { source }) satisfies Request);
+      const request: Request = { source };
+      if (includes) request.includes = includes;
+      if (dialect) request.dialect = dialect;
+      current.postMessage(request);
       if (Atomics.wait(state, 0, 0, budget) === 'timed-out') {
         stop();
         return { status: 'timeout', budget };
@@ -125,7 +131,7 @@ export async function createRuntime(directory: string, options: RuntimeOptions =
  * once rather than on every keystroke.
  */
 export interface Renderer {
-  (source: string, includes?: Includes): RenderResult;
+  (source: string, includes?: Includes, dialect?: DialectId): RenderResult;
   /** Forget every outcome, so that cached timeouts are retried under a new budget. */
   clear(): void;
 }
@@ -135,16 +141,18 @@ export function createRenderer(
   onFresh: (source: string, result: RenderResult) => void = () => {}
 ): Renderer {
   const cache = new Map<string, RenderResult>();
-  const render = (source: string, includes?: Includes): RenderResult => {
+  const render = (source: string, includes?: Includes, dialect?: DialectId): RenderResult => {
     // The included files are keyed by their identity, not their content: hashing megabytes of
     // model libraries on every keystroke would cost more than the cache saves.
-    const key = createHash('sha256').update(source).update('\u0000').update(includes?.identity ?? '').digest('hex');
+    const key = createHash('sha256')
+      .update(source).update('\u0000').update(includes?.identity ?? '').update('\u0000').update(dialect ?? '')
+      .digest('hex');
     let result = cache.get(key);
     if (result) {
       // Re-insert so Map order tracks recency and the first key is the least recently used.
       cache.delete(key);
     } else {
-      result = runtime.render(source, includes);
+      result = runtime.render(source, includes, dialect);
       onFresh(source, result);
       if (result.status === 'unavailable') return result;
     }

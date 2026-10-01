@@ -71,3 +71,8 @@ test('a layout failure is a failure with a plain message, never an exception', a
   const result = await renderNetlist('R1 a 0 1k', symbols, () => Promise.reject(new Error('java.lang.NullPointerException')));
   assert.deepEqual(result, { status: 'failure', message: 'The schematic could not be laid out (java.lang.NullPointerException).' });
 });
+
+test('renderNetlist takes the dialect as an optional trailing argument, and ngspice is the default', async () => {
+  const source = 'V1 in 0 5\nR1 in out 1k';
+  assert.deepEqual(await renderNetlist(source, symbols, layout, undefined, 'ngspice'), await renderNetlist(source, symbols, layout));
+});
