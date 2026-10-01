@@ -1,0 +1,20 @@
+* C:\Users\me\Documents\LTspiceXVII\buck-converter.asc
+V1 vin 0 12 Rser=10m
+M1 vin sw gate IRF540 ; high-side switch
+M2 sw 0 gate_n IRF9540
+L1 sw out 22µ Rser=20m
+C1 out 0 100µ Rser=50m
+I1 out 0 R=5 $ the load, drawn as a resistor
+A1 clk 0 0 0 0 0 gate 0 BUF Vhigh=12 Trise=10n
+A2 clk 0 0 0 0 gate_n 0 0 INV Vhigh=12
+V2 clk 0 PULSE(0 1 0 1n 1n 2.5u 5u)
+@1 out vin fstart=100 fend=1Meg
+&1 out 0 sw 0
+.model IRF540 VDMOS(Rg=3 Vto=4 Rd=10m)
+.model IRF9540 VDMOS(pchan Vto=-4 Rg=3)
+.model NMOS NMOS
+.model PMOS PMOS
+.lib standard.mos
+.tran 0 2m 0 10n
+.backanno
+.end

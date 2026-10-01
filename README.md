@@ -242,6 +242,17 @@ channel, and the setting applies; an unknown setting value reads as ngspice.
 The fence is always ` ```spice `: the dialect is never guessed from its content,
 and ` ```ltspice ` is not claimed.
 
+In `ltspice`, netlists are read as LTspice 26 reads them: only `*` and `;`
+comment (`$G_VDD` is a node, `//` is text), `@` and `&` are the FRA elements,
+`A` functions have eight pins, `U` is an RC line, a VDMOS `M` has three pins and
+is P-channel by `pchan`, `Z` is an IGBT with an `NIGBT`/`PIGBT` model, `I`/`B`
+with `R=` are resistors, `value=` sources have two pins and `Laplace=`/`tbl=`
+sources four. `.lib file` reads the whole file for its models and subcircuits
+but not its top-level elements; a `.lib` whose file is not next to the document
+(`standard.dio`, `UniversalOpAmps2.sub`) is noted and skipped, since LTspice
+reads it from its own library folder. Expressions as node names (`{n}`) are
+not read.
+
 ![An op-amp drawn as a labelled block in an inverting amplifier, and a netlist error pointing at its column](media/screenshots/caption-and-error.jpg)
 
 ## Errors and limits

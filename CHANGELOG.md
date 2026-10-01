@@ -14,6 +14,13 @@
   nested `.subckt`, `.macro`/`.eom`; `#` comments, `\\` continuation and quoted
   expressions; `.incl`; the first branch of an `.if`; a note for lines after
   `.end`. Changed: `.lib file` without a section is an error, as in ngspice.
+- `dialect="ltspice"` reads a fence with a parser generated from the LTspice
+  overlay (`vendor/parsers/ltspice.cjs`): only `*` and `;` comment, so `$G_`
+  nodes survive; `@` and `&` FRA elements; eight-pin `A` functions titled by
+  their keyword; three-pin VDMOS; `Z` as IGBT by model; `I`/`B … R=` as
+  resistors; `value=`, `Laplace=` and `tbl=` dependent-source shapes; `.lib file`
+  reads a library's models and subcircuits without its top-level elements, and a
+  `.lib` of a file that is not here (LTspice's standard libraries) is a note.
 
 ## 0.1.0 — 2026-09-30
 

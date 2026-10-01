@@ -118,6 +118,14 @@ const TITLE_HINT = ' If this line is a title, start it with * to make it a comme
  */
 const WHOLE_FILE_LIB: ReadonlySet<DialectId> = new Set(['ltspice', 'pspice']);
 
+/**
+ * Dialects whose one-argument `.lib file` is a library, not an include: elements at the file's top
+ * level are not part of the circuit (LTspice help: "Circuit elements at global scope are ignored"),
+ * and a file that is not here is noted, not an error — LTspice resolves bare names such as
+ * `standard.dio` against its own library folder, which the preview cannot see.
+ */
+const LIBRARY_LIB: ReadonlySet<DialectId> = new Set(['ltspice']);
+
 /** Types whose value may not be left off; a source without one is simply a 0 V or 0 A source. */
 const VALUE_REQUIRED: ReadonlySet<ElementTypeId> = new Set(['resistor', 'capacitor', 'inductor']);
 
@@ -192,6 +200,10 @@ function where(card: Card): string {
 
 function capitalise(text: string): string {
   return text[0]!.toUpperCase() + text.slice(1);
+}
+
+function uncapitalise(text: string): string {
+  return text[0]!.toLowerCase() + text.slice(1);
 }
 
 /**
@@ -326,23 +338,36 @@ function expand(cards: Card[], from: string, includes: IncludeSet, notes: string
 function include(card: Card, target: { path: ParsedToken; section?: ParsedToken }, from: string, includes: IncludeSet, notes: string[], stack: string[], dialect: DialectId): Card[] {
   const { path, section } = target;
   const here = (token: ParsedToken) => at(card, token);
+  const shown = unquote(path.text);
+  // A whole-file `.lib` in a dialect where it names a library rather than an include.
+  const library = section === undefined && directive(card) === '.lib' && LIBRARY_LIB.has(dialect);
+  const skipLibrary = (reason: string): Card[] => {
+    notes.push(`${capitalise(where(card))}: .lib ${shown} is not read: ${reason}. LTspice reads it from its own library folder.`);
+    return [];
+  };
   let key: string;
   try {
     key = resolveInclude(from, path.text);
   } catch (error) {
-    if (error instanceof IncludePathError) throw new ParseError(`${error.message} (${path.text})`, here(path));
-    throw error;
+    if (!(error instanceof IncludePathError)) throw error;
+    if (library) return skipLibrary(uncapitalise(error.message.replace(/\.$/, '')));
+    throw new ParseError(`${error.message} (${path.text})`, here(path));
   }
   if (includes.unavailable !== undefined) {
     notes.push(`${capitalise(where(card))}: ${directive(card)} ${path.text} is not read: ${includes.unavailable}.`);
     return [];
   }
-  const shown = unquote(path.text);
   if (stack.includes(key)) throw new ParseError(`${shown} includes itself.`, here(path));
   if (stack.length >= MAX_INCLUDE_DEPTH) throw new ParseError(`Includes are nested more than ${MAX_INCLUDE_DEPTH} deep.`, here(path));
   const entry = includes.files[key];
-  if (entry === undefined) throw new ParseError(`${shown} could not be read.`, here(path));
-  if (typeof entry !== 'string') throw new ParseError(`${shown} could not be read: ${entry.error}`, here(path));
+  if (entry === undefined) {
+    if (library) return skipLibrary('the file is not here');
+    throw new ParseError(`${shown} could not be read.`, here(path));
+  }
+  if (typeof entry !== 'string') {
+    if (library) return skipLibrary(entry.error.replace(/\.$/, ''));
+    throw new ParseError(`${shown} could not be read: ${entry.error}`, here(path));
+  }
   // Every position in the included file points back at this include in the fence.
   const anchor = card.anchor ?? { line: path.line, column: path.column };
   const found = toCards(entry, key, anchor, dialect, notes);
@@ -355,7 +380,24 @@ function include(card: Card, target: { path: ParsedToken; section?: ParsedToken 
     const stop = cards.findIndex((c, i) => i > start && directive(c) === '.endl');
     cards = cards.slice(start + 1, stop === -1 ? undefined : stop);
   }
-  return expand(cards, key, includes, notes, [...stack, key], dialect);
+  const expanded = expand(cards, key, includes, notes, [...stack, key], dialect);
+  if (!library) return expanded;
+  // A library's elements at its top level are not part of the circuit; its models and subcircuits are.
+  const kept: Card[] = [];
+  let depth = 0;
+  let dropped = 0;
+  for (const found of expanded) {
+    const word = directive(found);
+    if (word === '.subckt' || word === '.macro') depth++;
+    if (depth === 0 && found.parsed.kind === 'element') {
+      dropped++;
+      continue;
+    }
+    if ((word === '.ends' || word === '.eom') && depth > 0) depth--;
+    kept.push(found);
+  }
+  if (dropped > 0) notes.push(`${capitalise(where(card))}: ${dropped} element${dropped === 1 ? '' : 's'} at the top level of ${shown} ${dropped === 1 ? 'is' : 'are'} not part of the circuit; LTspice ignores them in a .lib file.`);
+  return kept;
 }
 
 // --- Reading ---------------------------------------------------------------------------------------

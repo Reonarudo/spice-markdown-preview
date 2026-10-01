@@ -1,3 +1,4 @@
+/* ltspice: composed by scripts/grammars/compose.ts from grammar/spice and grammar/dialects/ltspice; do not edit. */
 /*
  * SPICE base scanner (ADR 0009). The core every SPICE dialect shares: cards, `+` continuation,
  * `*` and `;` comments, one head token per card, words, pairs and groups, a parenthesised node
@@ -20,13 +21,12 @@
  *   OPAQUE     a region the dialect swallows (`.control` … `.endc`), back to its closing head;
  *   AFTEREND   after the first `.end`: lines are only counted.
  */
-//@ section options
+  /* from grammar/spice/scanner.l: options */
 %option reentrant bison-bridge bison-locations
 %option noyywrap nounistd never-interactive noinput nounput nodefault
 %option extra-type="struct scan_state *"
-//@ end
-//@ section generated:options
-//@ end
+  /* generated from src/catalogue/dialects.ts: ltspice is case-insensitive */
+%option caseless
 
 %{
 #include "parser.h"
@@ -86,7 +86,7 @@
 #define END_OF_CARD() do { yyextra->at_card_start = 1; yyextra->after_head = 0; return NEWLINE; } while (0)
 %}
 
-//@ section definitions
+  /* from grammar/spice/scanner.l: definitions */
 WS        [ \t\r]
 SEP       [ \t\r,]
 WORDCHAR  [^ \t\r\n,;=(){}]
@@ -94,9 +94,8 @@ WORD      {WORDCHAR}+
 WORDTAIL  {WORDCHAR}*
 GROUP     \([^()\n]*\)|\{[^{}\n]*\}
 BRACES    \{[^{}\n]*\}
-//@ end
-//@ section generated:letters
-//@ end
+  /* generated from src/catalogue/dialects.ts: ltspice letters */
+ELEMENT_LETTER  [\&\@ABCDEFGHIJKLMOQRSTUVWXZ]
 
 %x LINESTART NODES GROUPSCAN MODEL OPAQUE AFTEREND
 
@@ -109,32 +108,82 @@ BRACES    \{[^{}\n]*\}
   }
 %}
 
-//@ section generated:keywords
-//@ end
+  /* generated from src/catalogue/ltspice-function.ts, src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"AND"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"BUF"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"CHEBYSHEV"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts */
+"CUR"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"DFLOP"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"FREQ"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"INV"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"LAPLACE"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"MODULATE"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"NAND"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"NOISE"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"NOR"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts, src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"OR"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"OTA"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"POLY"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"SCHMITT"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"SCHMTBUF"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"SCHMTINV"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"TABLE"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts, src/catalogue/vcvs.ts */
+"VALUE"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"VARISTOR"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts */
+"VCCAP"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts */
+"VCCS"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vccs.ts */
+"VCR"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vcvs.ts */
+"VCVS"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/vcvs.ts */
+"VOL"{GROUP}?  { TOKEN(KEYWORD); }
+  /* generated from src/catalogue/ltspice-function.ts */
+"XOR"{GROUP}?  { TOKEN(KEYWORD); }
 
-//@ section comments
-<LINESTART>\*[^\n]*\n?                { /* a whole-line comment */ }
-<LINESTART,INITIAL,MODEL>;[^\n]*      { /* an inline comment runs to the end of the line */ }
-//@ end
+  /* from grammar/dialects/ltspice/scanner.l: comments */
+<LINESTART>\*[^\n]*\n?                      { /* a whole-line comment */ }
+<LINESTART,INITIAL,MODEL>;[^\n]*            { /* an inline comment runs to the end of the line */ }
 
-//@ section continuation
+  /* from grammar/spice/scanner.l: continuation */
 <INITIAL,MODEL>\n(\*[^\n]*\n|{WS}*\n)*{WS}*\+   { /* `+` continues the card; comment and blank lines between the pieces are allowed */ }
 <LINESTART>\+                                   { BEGIN(INITIAL); yyextra->at_card_start = 0; scan_remember(yyextra, yytext, yyleng); return BAD_CONTINUATION; }
-//@ end
 
-//@ section quoting
-  /* The base has no quoted expressions; a dialect's overlay fills this section with '…' and "…". */
-//@ end
+  /* from grammar/dialects/ltspice/scanner.l: quoting */
+  /* LTspice: "…" is a string — a file name with spaces, a string parameter; '…' is an expression (accepted historically, like {…}). */
+<INITIAL,MODEL>'[^'\n]*'                    { TOKEN(GROUP); }
+<INITIAL,MODEL>\"[^\"\n]*\"                 { TOKEN(GROUP); }
 
-//@ section opaque
+  /* from grammar/spice/scanner.l: opaque */
   /* Opaque regions — ngspice's .control…endc, HSPICE's .DATA/.ALTER/.PROTECT — are swallowed here by the dialect overlays.
      Nothing in the base sets `opaque`, so OPAQUE is never entered; these rules only keep `%option nodefault` satisfied
      for a dialect (LTspice) that has no opaque region and keeps this section. */
 <OPAQUE>[^\n]*\n?                           { }
 <OPAQUE><<EOF>>                             { return YYEOF; }
-//@ end
 
-//@ section heads
+  /* from grammar/spice/scanner.l: heads */
 <LINESTART>{WS}+                          { /* indentation before a head */ }
 <LINESTART>\n                             { /* a blank line */ }
 <LINESTART>".end"                         { yyextra->ending = 1; HEAD(DIRECTIVE_HEAD); }
@@ -145,9 +194,8 @@ BRACES    \{[^{}\n]*\}
 <LINESTART>{WORD}                         { HEAD(WORD); }
 <LINESTART>.                              { HEAD(WORD); }
 <LINESTART><<EOF>>                        { return YYEOF; }
-//@ end
 
-//@ section nodes
+  /* from grammar/spice/scanner.l: nodes */
   /* `X1 (a b) sub`: a `(` right after an element's name opens its node list, unwrapped into words. */
 <INITIAL>{WORD}?\(                        {
                                             if (yyextra->after_head && yyleng == 1) {
@@ -166,9 +214,8 @@ BRACES    \{[^{}\n]*\}
 <NODES>\n                                 |
 <NODES><<EOF>>                            { UNTERMINATED_AT_OPEN("("); }
 <NODES>.                                  { TOKEN(WORD); }
-//@ end
 
-//@ section groups
+  /* from grammar/spice/scanner.l: groups */
   /* A `(…)` or `{…}` group is one token, nested brackets and all, and must close on its line. */
 <INITIAL>\{                               { GROUP_BEGIN('{', '}', GROUP); }
 <GROUPSCAN>[^(){}\n]+                     { scan_group_append(yyextra, yytext, yyleng); }
@@ -187,9 +234,8 @@ BRACES    \{[^{}\n]*\}
                                           }
 <GROUPSCAN>\n                             |
 <GROUPSCAN><<EOF>>                        { UNTERMINATED_AT_OPEN(&yyextra->group.open); }
-//@ end
 
-//@ section model
+  /* from grammar/spice/scanner.l: model */
   /* `.model name type (p=v …)`: parentheses are separators, so `level=` is seen as a pair. */
 <MODEL>{SEP}+                             { }
 <MODEL>[()]                               { }
@@ -197,22 +243,19 @@ BRACES    \{[^{}\n]*\}
 <MODEL>{BRACES}                           { TOKEN(GROUP); }
 <MODEL>{WORD}                             { TOKEN(WORD); }
 <MODEL>.                                  { TOKEN(WORD); }
-//@ end
 
-//@ section ending
+  /* from grammar/spice/scanner.l: ending */
   /* After the first `.end` nothing is read; non-blank, non-comment lines are counted for a note. */
 <AFTEREND>{WS}*\*[^\n]*\n?                { }
 <AFTEREND>{WS}*\n                         { }
 <AFTEREND>[^\n]*\n?                       { yyextra->after_end++; }
 <AFTEREND><<EOF>>                         { return YYEOF; }
-//@ end
 
-//@ section tail
+  /* from grammar/spice/scanner.l: tail */
 <INITIAL,MODEL>\n                         { END_OF_CARD(); }
 <INITIAL>{SEP}+                           { }
 <INITIAL>"="                              { yyextra->after_head = 0; scan_remember(yyextra, yytext, yyleng); return EQUALS; }
 <INITIAL>{WORD}                           { TOKEN(WORD); }
 <INITIAL>.                                { TOKEN(WORD); }
 <INITIAL,MODEL><<EOF>>                    { if (!yyextra->at_card_start) END_OF_CARD(); return YYEOF; }
-//@ end
 %%
