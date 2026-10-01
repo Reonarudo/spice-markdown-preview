@@ -1,0 +1,28 @@
+* Every Y device the Reference Guide documents, and a few it does not (RG §2.3.24–2.3.32, §2.4)
+.PARAM td=10n
+VS src 0 SIN(0 1 1MEG)
+RS src in 50
+YMEMRISTOR mr1 in mem mrm2
+YDELAY dly1 dout 0 mem 0 TD={td}
+YTRANSLINE line1 dout tout tlmod len=12 lumps=1440
+YPDE pde1 tout pout zmod
+YLIN lin1 pout 0 lout 0 YLIN_MOD1
+YACC acc1 acc vel pos v0=10 x0=0
+YOPAMP op1 lout 0 oout
+yand gate1 oout mem dout dgmod
+L1 oout n1 1u
+L2 n1 n2 1u
+L3 n2 0 1u
+K1 L1 L2 L3 0.9 core
+RL n2 0 R={100 * 2}
+E1 e1 0 VALUE={V(oout) * 2}
+G1 g1 0 POLY(2) oout 0 lout 0 0 1 1
+B1 b1 0 V={V(e1) + V(g1)}
+.MODEL mrm2 memristor (LEVEL=2)
+.MODEL tlmod transline (R=0.1 L=1n C=1p)
+.MODEL zmod ZOD (NA=1e16 ND=1e16)
+.MODEL YLIN_MOD1 LIN (TSTONEFILE="two_port.s2p")
+.MODEL core CORE (MS=1 A=1 K=1)
+.MODEL dgmod DIG (VLO=0 VHI=1)
+.TRAN 1n 1u
+.END

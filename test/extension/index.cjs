@@ -85,6 +85,8 @@ async function dialects(render) {
   await settled(render, fence('spice {dialect="pspice"}', 'U1 NAND(2) $G_DPWR $G_DGND a b y D_00 IO_STD\nR1 a y 1k\nR2 b 0 1k'), /<svg class="spice"/);
   // HSPICE: `GND!` is ground, a `$` after a number ends the value, and a three-node MOSFET draws.
   await settled(render, fence('spice {dialect="hspice"}', 'M1 out in GND! nch W=1u L=1u$no bulk\nR1 out vdd! 1k\nV1 vdd! 0 1.8\n.MODEL nch.1 NMOS'), /<svg class="spice"/);
+  // Xyce: an indented line is a comment, `gnd` is ground only under REPLACEGROUND, and a `Y<type> name` device draws as a block.
+  await settled(render, fence('spice {dialect="xyce"}', '.PREPROCESS REPLACEGROUND TRUE\n   R9 a b 1k\nYMEMRISTOR mr1 in gnd mrm\nR1 $GVDD in 1k\nV1 $GVDD 0 1\n.MODEL mrm memristor'), /<svg class="spice"/);
   // A dialect whose parser is not vendored yet proves the name travels: the worker reports it.
   // The host loads a dialect's parser at its first fence, so the first render may still be loading.
   const vendored = await fs.readdir(path.join(vscode.extensions.getExtension('ReoX86.spice-schematic-preview').extensionPath, 'vendor', 'parsers'));

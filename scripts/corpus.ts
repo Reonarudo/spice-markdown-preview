@@ -1,14 +1,16 @@
 /**
  * Parse a corpus of netlists with one vendored dialect module and report what each file became.
- * CI runs this over decks that cannot be committed — Xyce_Regression's `Netlists/XDM/PSPICE` and
- * `Netlists/XDM/HSPICE` state no licence (Redmine #1190) — so a generated parser is still checked
- * against real text.
+ * CI runs this over decks that cannot be committed — Xyce_Regression's `Netlists/` tree, its
+ * `XDM/PSPICE` and `XDM/HSPICE` translations included, states no licence (Redmine #1190) — so a
+ * generated parser is still checked against real text.
  *
  *   node --import tsx scripts/corpus.ts --dialect pspice --ext .pspice,.net,.lib --title .pspice <dir>…
  *
  * `--ext` picks the files by extension; `--title` names the extensions whose first line is a
- * deck's title, dropped before parsing (a fence has none, ADR 0006). Every file is parsed by the
- * module (ADR 0008) and then read end to end by `parseNetlist`, with no included files. A
+ * deck's title, dropped before parsing (a fence has none, ADR 0006); `--except` lists path
+ * fragments to leave out (a simulator's own error-message tests are malformed on purpose);
+ * `--tolerate` lists error codes that are reported but do not fail the run. Every file is parsed
+ * by the module (ADR 0008) and then read end to end by `parseNetlist`, with no included files. A
  * structural error from the module fails the run; a reader error is listed for information.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
@@ -23,11 +25,13 @@ interface Options {
   dialect: DialectId;
   extensions: string[];
   titled: string[];
+  except: string[];
+  tolerated: string[];
   roots: string[];
 }
 
 function options(argv: string[]): Options {
-  const found: Options = { dialect: 'ngspice', extensions: ['.cir'], titled: [], roots: [] };
+  const found: Options = { dialect: 'ngspice', extensions: ['.cir'], titled: [], except: [], tolerated: [], roots: [] };
   for (let index = 0; index < argv.length; index++) {
     const argument = argv[index]!;
     const value = (): string => {
@@ -38,39 +42,45 @@ function options(argv: string[]): Options {
     if (argument === '--dialect') found.dialect = value() as DialectId;
     else if (argument === '--ext') found.extensions = value().split(',');
     else if (argument === '--title') found.titled = value().split(',');
+    else if (argument === '--except') found.except = value().split(',');
+    else if (argument === '--tolerate') found.tolerated = value().split(',');
     else found.roots.push(argument);
   }
   if (found.roots.length === 0) throw new Error('name at least one directory');
   return found;
 }
 
-function files(root: string, extensions: string[]): string[] {
+function files(root: string, extensions: string[], except: string[]): string[] {
   return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
     const path = join(root, entry.name);
-    if (entry.isDirectory()) return files(path, extensions);
+    if (except.some((fragment) => path.includes(fragment))) return [];
+    if (entry.isDirectory()) return files(path, extensions, except);
     return extensions.some((extension) => entry.name.endsWith(extension)) ? [path] : [];
   }).sort();
 }
 
 async function main(): Promise<void> {
-  const { dialect, extensions, titled, roots } = options(process.argv.slice(2));
+  const { dialect, extensions, titled, except, tolerated, roots } = options(process.argv.slice(2));
   const require = createRequire(import.meta.url);
   const vendored = fileURLToPath(new URL(`../vendor/parsers/${dialect}.cjs`, import.meta.url));
   await loadParser(dialect, require(vendored) as ParserFactory);
 
   let structural = 0;
+  let tolerable = 0;
   let total = 0;
   for (const root of roots) {
-    for (const path of files(root, extensions)) {
+    for (const path of files(root, extensions, except)) {
       total++;
       const shown = relative(process.cwd(), path);
       let text = readFileSync(path, 'utf8');
       if (titled.some((extension) => path.endsWith(extension))) text = text.slice(text.indexOf('\n') + 1);
       const output = parse(dialect, text);
       if (output.error) {
-        structural++;
-        const { line, column, found, expected } = output.error;
-        console.log(`STRUCTURAL ${shown}:${line}:${column + 1}: found ${found.class} ${JSON.stringify(found.text)}, expected ${expected.join(', ')}`);
+        const { code, line, column, found, expected } = output.error;
+        const tolerate = code !== undefined && tolerated.includes(code);
+        if (tolerate) tolerable++;
+        else structural++;
+        console.log(`${tolerate ? 'TOLERATED ' : 'STRUCTURAL'} ${shown}:${line}:${column + 1}: found ${found.class} ${JSON.stringify(found.text)}, expected ${expected.join(', ')}${code ? ` (${code})` : ''}`);
         continue;
       }
       const result = parseNetlist(text, undefined, dialect);
@@ -81,7 +91,7 @@ async function main(): Promise<void> {
       }
     }
   }
-  console.log(`${total} files, ${structural} with a structural error`);
+  console.log(`${total} files, ${structural} with a structural error${tolerable > 0 ? `, ${tolerable} tolerated (${tolerated.join(', ')})` : ''}`);
   if (total === 0 || structural > 0) process.exitCode = 1;
 }
 

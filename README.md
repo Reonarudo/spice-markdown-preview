@@ -285,6 +285,21 @@ alone is an error; `.DATA` blocks and `.PROTECT` text are skipped, and the first
 `.ALTER` ends the circuit, both with a note. Only the first simulation of a file
 is drawn.
 
+In `xyce`, netlists are read as Xyce 7.10 reads them: `*` lines and `;` comment,
+and so is any line that starts with a blank or a tab unless its first non-blank
+character is `+` (`$GVDD` is a global node, `//` is text, a trailing `\\` does
+not continue a line); only `0` is ground until the netlist says `.PREPROCESS
+REPLACEGROUND TRUE`, which makes `GND`, `GND!` and `GROUND` ground too;
+`Y<type> <name>` names a device by its type — a memristor, delay, lumped line,
+PDE device or n-port by the catalogue, any other type a block titled by it with
+numbered pins; `U` is a digital gate with its `DPWR`/`DGND` pins first, `P` a
+port, `S … CONTROL=` a two-node switch, and `A`/`N` are not elements; `K` may
+couple several inductors and name a core model; `M` takes three nodes with an
+MVS model (level 2000), four to seven with BSIM-SOI and is a VDMOS at level 18;
+`Q` writes a named substrate as `[SUB]`; `R`/`C`/`L` name a model before the
+value; `.INCL` and quoted file names are read, `.LIB file entry` reads a section
+and `.LIB file` alone is an error. Only the first circuit of a file is drawn.
+
 ![An op-amp drawn as a labelled block in an inverting amplifier, and a netlist error pointing at its column](media/screenshots/caption-and-error.jpg)
 
 ## Errors and limits

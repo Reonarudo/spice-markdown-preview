@@ -43,6 +43,17 @@
   selector; `.CONNECT`; library sections calling sections of their own file;
   `.DATA`, `.PROTECT` and `.ALTER` blocks skipped with a note.
 
+- `dialect="xyce"` reads a fence with a parser generated from the Xyce overlay
+  (`vendor/parsers/xyce.cjs`): `*`, `;` and any indented line comment (`$GVDD`
+  is a node, `//` is text, no `\\` continuation); `gnd`, `gnd!` and `ground`
+  are ground only under `.PREPROCESS REPLACEGROUND TRUE`; `Y<type> <name>`
+  devices by the catalogue or as blocks titled by their type; `U` gates with
+  supply pins first, `P` ports, the two-node `S … CONTROL=` switch, no `A`/`N`;
+  multi-inductor `K` with a core model; three-node MVS, four- to seven-node SOI
+  and level-18 VDMOS `M`; `[SUB]` substrate names; a model before a passive's
+  value; `.INCL` and quoted file names; `.LIB file entry` only. The advisory
+  `corpus` CI job also parses Xyce_Regression's native decks.
+
 ## 0.1.0 — 2026-09-30
 
 - Draw `spice` fences as schematics in the Markdown preview, laid out by elkjs

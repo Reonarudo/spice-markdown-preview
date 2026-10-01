@@ -114,8 +114,8 @@ const TITLE_HINT = ' If this line is a title, start it with * to make it a comme
 
 /**
  * Dialects in which a one-argument `.lib file` reads the whole file. ngspice reads a library only
- * by section (`.lib file section`), and so does HSPICE (CR p.137); LTspice and PSpice read the
- * file (confirmed by their overlay tickets); the Xyce overlay ticket settles Xyce.
+ * by section (`.lib file section`), and so do HSPICE (CR p.137) and Xyce (RG §2.1.16: the call is
+ * always `.LIB file entry`); LTspice and PSpice read the file (confirmed by their overlay tickets).
  */
 const WHOLE_FILE_LIB: ReadonlySet<DialectId> = new Set(['ltspice', 'pspice']);
 
@@ -443,6 +443,8 @@ interface Context {
   subcircuits: Map<string, Ports>;
   /** HSPICE `.connect node1 node2`: the normalised second node is drawn as the first. */
   connected: Map<string, string>;
+  /** Xyce `.preprocess replaceground true`: the dialect's `groundWhenReplaceGround` spellings are ground too (RG §2.1.28). */
+  replaceGround: boolean;
   notes: string[];
 }
 
@@ -473,7 +475,7 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
   const top = toCards(source, '', undefined, dialect, notes);
   if (top.error) throw top.error;
   const cards = expand(top.cards, '', includes, notes, [], dialect);
-  const context: Context = { dialect, models: new Map(), subcircuits: new Map(), connected: new Map(), notes };
+  const context: Context = { dialect, models: new Map(), subcircuits: new Map(), connected: new Map(), replaceGround: false, notes };
   const elements: Card[] = [];
 
   // First pass: directives, so that a model or subcircuit defined below its use still counts.
@@ -521,7 +523,14 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
     if (word === '.connect' && dialect === 'hspice') {
       // `.connect node1 node2` merges the two nodes under the first name (CR p.51).
       const [first, second] = card.parsed.tokens;
-      if (first && second) context.connected.set(normalise(second.text, dialect), normalise(first.text, dialect));
+      if (first && second) context.connected.set(normalise(second.text, context), normalise(first.text, context));
+      continue;
+    }
+    if (word === '.preprocess' && DIALECTS[dialect].groundWhenReplaceGround !== undefined) {
+      // Xyce `.preprocess replaceground true` makes `gnd`, `gnd!` and `ground` ground (RG §2.1.28);
+      // every element is read in the second pass, so the line may stand anywhere in the file.
+      const [option, value] = card.parsed.tokens;
+      if (option && /^replaceground$/i.test(option.text) && value && /^(true|1)$/i.test(value.text)) context.replaceGround = true;
       continue;
     }
     if (word === '.subckt' || word === '.macro') {
@@ -947,19 +956,25 @@ function closedNodeCount(card: Card): number {
   return parsed.tokens.filter((token) => token.line === parsed.line && token.column < close).length;
 }
 
-/** Every spelling of ground becomes `0`; other node names are case-insensitive unless the dialect says otherwise; PSpice's `[SUB]` is `SUB`. */
-function normalise(name: string, dialect: DialectId): string {
-  const rules = DIALECTS[dialect];
+/**
+ * Every spelling of ground becomes `0` — Xyce's extra spellings only once the netlist has asked
+ * for them; other node names are case-insensitive unless the dialect says otherwise; PSpice's and
+ * Xyce's `[SUB]` is `SUB`.
+ */
+function normalise(name: string, context: Context): string {
+  const rules = DIALECTS[context.dialect];
   const node = rules.bracketedNodeNames && /^\[.+\]$/.test(name) ? name.slice(1, -1) : name;
   const lower = node.toLowerCase();
-  if (rules.ground.some((spelling) => (rules.caseSensitive ? spelling === node : spelling.toLowerCase() === lower))) return GROUND;
+  const isGround = (spelling: string): boolean => (rules.caseSensitive ? spelling === node : spelling.toLowerCase() === lower);
+  if (rules.ground.some(isGround)) return GROUND;
+  if (context.replaceGround && rules.groundWhenReplaceGround?.some(isGround)) return GROUND;
   return rules.caseSensitive ? node : lower;
 }
 
 /** Name each node token's pin: from the form's terminals, or by the block's pin rule. */
 function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinRule | undefined, nameToken: ParsedToken | undefined, context: Context, ref: string): Pin[] {
-  const { dialect, subcircuits, notes } = context;
-  const nodes = nodeTokens.map((token) => joined(normalise(token.text, dialect), context));
+  const { subcircuits, notes } = context;
+  const nodes = nodeTokens.map((token) => joined(normalise(token.text, context), context));
   switch (rule) {
     case 'numbered':
       return nodes.map((node, index) => ({ name: String(index + 1), node }));
@@ -989,7 +1004,6 @@ function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinR
  * keeps its `~` on the pin. `%vnam` names a voltage source, not a node, and is not drawn.
  */
 function xspicePins(tokens: ParsedToken[], context: Context): Pin[] {
-  const { dialect } = context;
   const pins: Pin[] = [];
   let port = 0;
   let modifier = '';
@@ -999,7 +1013,7 @@ function xspicePins(tokens: ParsedToken[], context: Context): Pin[] {
     const inverted = raw.startsWith('~');
     const node = inverted ? raw.slice(1) : raw;
     if (node.toLowerCase() === 'null' || modifier.toLowerCase() === '%vnam') return;
-    pins.push({ name: inverted ? `~${name}` : name, node: joined(normalise(node, dialect), context) });
+    pins.push({ name: inverted ? `~${name}` : name, node: joined(normalise(node, context), context) });
   };
   for (const token of tokens) {
     let text = token.text;

@@ -66,10 +66,10 @@ jobs:
             vendor/parsers
             build/grammars/**/*.c
             build/grammars/**/*.h
-  # Advisory: parses real PSpice and HSPICE decks that cannot be committed — Xyce_Regression states
-  # no licence (Redmine #1190) — with the vendored modules at a pinned commit, and reports every
-  # structural error (scripts/corpus.ts). A failure here never blocks a merge; it says an overlay
-  # has a gap.
+  # Advisory: parses real Xyce, PSpice and HSPICE decks that cannot be committed — Xyce_Regression
+  # states no licence (Redmine #1190) — with the vendored modules at a pinned commit, and reports
+  # every structural error (scripts/corpus.ts). A failure here never blocks a merge; it says an
+  # overlay has a gap.
   corpus:
     runs-on: ubuntu-latest
     continue-on-error: true
@@ -81,16 +81,20 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - name: Fetch Netlists/XDM/PSPICE and HSPICE of Xyce_Regression at a pinned commit
+      - name: Fetch the Netlists tree of Xyce_Regression at a pinned commit
         run: |
           git init -q "$RUNNER_TEMP/xyce-regression"
           cd "$RUNNER_TEMP/xyce-regression"
           git remote add origin https://github.com/Xyce/Xyce_Regression.git
-          git sparse-checkout set --no-cone /Netlists/XDM/PSPICE/ /Netlists/XDM/HSPICE/
+          git sparse-checkout set --no-cone /Netlists/
           git fetch -q --depth 1 --filter=blob:none origin bbde402756cdf542627ff7ea0056db130fcb005b
           git checkout -q FETCH_HEAD
       - run: node --import tsx scripts/corpus.ts --dialect pspice --ext .pspice,.net,.lib --title .pspice "$RUNNER_TEMP/xyce-regression/Netlists/XDM/PSPICE"
       - run: node --import tsx scripts/corpus.ts --dialect hspice --ext .cir,.net,.lib --title .cir,.net "$RUNNER_TEMP/xyce-regression/Netlists/XDM/HSPICE"
+      # Native Xyce decks: every .cir outside XDM and outside the directories that hold Xyce's own
+      # error-message tests, which are malformed on purpose. A group continued onto a `+` line is
+      # tolerated until the SPICE base reads one (the map's "groups across continuation lines" ticket).
+      - run: node --import tsx scripts/corpus.ts --dialect xyce --ext .cir --title .cir --except /XDM/,/Certification_Tests/,/Message/,/MEASURE/,/NOISE/,/INVALID_CHARS/ --tolerate unterminated-group "$RUNNER_TEMP/xyce-regression/Netlists"
   minimum-vscode:
     runs-on: ubuntu-latest
     steps:

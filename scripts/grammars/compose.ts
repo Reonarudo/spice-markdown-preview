@@ -179,10 +179,10 @@ function claim(claims: Claims, text: string, file: string): void {
   claims.set(text, files);
 }
 
-function rules(claims: Claims, pattern: (text: string) => string, token: string): string[] {
+function rules(claims: Claims, pattern: (text: string) => string, action: string): string[] {
   const lines: string[] = [];
   for (const text of [...claims.keys()].sort()) {
-    lines.push(banner(`generated from ${[...claims.get(text)!].sort().join(', ')}`), `${pattern(text)}  { TOKEN(${token}); }`);
+    lines.push(banner(`generated from ${[...claims.get(text)!].sort().join(', ')}`), `${pattern(text)}  { ${action}; }`);
   }
   return lines;
 }
@@ -248,10 +248,13 @@ export function generatedSections(dialect: Dialect, catalogue: Readonly<Record<s
     ? [banner(`generated from ${DIALECTS_FILE}: ${dialect.id} has no element letters`)]
     : [banner(`generated from ${DIALECTS_FILE}: ${dialect.id} letters`), `ELEMENT_LETTER  ${characterClass(dialect.letters)}`];
   const keywordRules = [
-    ...rules(keywords, (text) => `"${text}"{GROUP}?`, 'KEYWORD'),
-    ...rules(suffixes, (text) => `<LINESTART>"${text}"`, 'SUFFIX_HEAD')
+    ...rules(keywords, (text) => `"${text}"{GROUP}?`, 'TOKEN(KEYWORD)'),
+    // A suffixed head opens the card like any head: the name that follows is read as a word in
+    // INITIAL, not as a head in LINESTART, where a name starting with an element letter (`mr1`)
+    // would be an element head and fail the parser.
+    ...rules(suffixes, (text) => `<LINESTART>"${text}"`, 'HEAD_IN(SUFFIX_HEAD, INITIAL)')
   ];
-  const masterRules = rules(masters, (text) => `"${text}"`, 'MASTER');
+  const masterRules = rules(masters, (text) => `"${text}"`, 'TOKEN(MASTER)');
 
   const section = (lines: string[]): string => lines.join('\n') + '\n';
   return {

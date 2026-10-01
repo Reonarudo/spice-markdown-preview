@@ -1,3 +1,4 @@
+/* xyce: composed by scripts/grammars/compose.ts from grammar/spice and grammar/dialects/xyce; do not edit. */
 /*
  * SPICE base parser (ADR 0009). A netlist is cards; a card is a head token followed by words,
  * keywords, groups and `key=value` pairs, written to JSON as it is read (ADR 0008). Sections
@@ -11,7 +12,7 @@
  *   unterminated-group    a `(` or `{` with no closing bracket on its line
  * Anything else is a plain syntax error reported with what was found and what was expected.
  */
-//@ section options
+  /* from grammar/spice/parser.y: options */
 %require "3.8"
 %define api.pure full
 %locations
@@ -20,7 +21,6 @@
 %expect 0
 %param { void *scanner }
 %parse-param { struct json *out }
-//@ end
 
 %code requires {
   #include "json.h"
@@ -36,7 +36,7 @@
 /* Columns are 0-based everywhere, as in src/netlist.ts; Bison's default starts them at 1. */
 %initial-action { @$.first_line = @$.last_line = 1; @$.first_column = @$.last_column = 0; }
 
-//@ section definitions
+  /* from grammar/spice/parser.y: definitions */
 %union { char *text; }
 %token YYEOF 0 "end of file"
 %token <text> ELEMENT_HEAD "element" SUFFIX_HEAD "suffixed element" DIRECTIVE_HEAD "directive"
@@ -45,10 +45,9 @@
 %token OPEN_NODES "node list" CLOSE_NODES "end of node list" UNTERMINATED "unterminated group"
 %type <text> key value
 %destructor { free($$); } <text>
-//@ end
 
 %%
-//@ section heads
+  /* from grammar/spice/parser.y: heads */
 netlist
   : %empty
   | netlist card NEWLINE
@@ -81,9 +80,8 @@ node_words
   : %empty                  { json_nodes_closed(out); }
   | node_words WORD         { json_token(out, "word", $2, @2.first_line, @2.first_column, @2.last_column); }
   ;
-//@ end
 
-//@ section tail
+  /* from grammar/spice/parser.y: tail */
 tokens
   : %empty
   | tokens token
@@ -109,7 +107,6 @@ value
   | GROUP
   | UNTERMINATED     { $$ = NULL; static const char *expected[] = { "group" }; coded_error(out, scanner, "unterminated-group", &@1, "unterminated group", expected, 1); YYABORT; }
   ;
-//@ end
 %%
 
 /* Only "memory exhausted" reaches here: syntax errors go through yyreport_syntax_error. */

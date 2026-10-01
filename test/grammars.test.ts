@@ -141,7 +141,7 @@ test('the generated sections spell a dialect’s case rule, letter set, keywords
     '  /* generated from src/catalogue/vcvs.ts */',
     '"VALUE"{GROUP}?  { TOKEN(KEYWORD); }',
     '  /* generated from src/catalogue/memristor.ts */',
-    '<LINESTART>"YMEMRISTOR"  { TOKEN(SUFFIX_HEAD); }',
+    '<LINESTART>"YMEMRISTOR"  { HEAD_IN(SUFFIX_HEAD, INITIAL); }',
     ''
   ].join('\n'));
   assert.equal(xyce['generated:letters'], ['  /* generated from src/catalogue/dialects.ts: xyce letters */', 'ELEMENT_LETTER  [BCDEFGHIJKLMOPQRSTUVWXYZ]', ''].join('\n'));

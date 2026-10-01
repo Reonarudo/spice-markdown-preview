@@ -27,7 +27,7 @@ export interface Dialect {
   globalStatement: boolean;
   /** Whether node, model and subcircuit names keep their case. */
   caseSensitive: boolean;
-  /** PSpice: a node name may be written in square brackets — `Q7 c b e [SUB] model` marks a named substrate — and `[SUB]` is the node `SUB`. */
+  /** PSpice and Xyce: a node name may be written in square brackets — `Q7 c b e [SUB] model` marks a named substrate — and `[SUB]` is the node `SUB`. */
   bracketedNodeNames?: true;
   /** The element letters the dialect accepts. Empty for native Spectre, which spells by master. */
   letters: readonly string[];
@@ -85,6 +85,8 @@ export const DIALECTS: Readonly<Record<DialectId, Dialect>> = {
     globalNodePatterns: ['^\\$G'],
     globalStatement: true,
     caseSensitive: false,
+    // RG §2.3.17: a substrate node that is a name, not a number, is written `[SUB]`.
+    bracketedNodeNames: true,
     letters: [...SPICE3_LETTERS, 'P', 'Y']
   },
   spectre: {

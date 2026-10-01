@@ -26,6 +26,7 @@
   #include "json.h"
 }
 %code {
+  #include <string.h>
   #include "driver.h"
   int yylex(YYSTYPE *yylval, YYLTYPE *yylloc, void *scanner);
   static void yyerror(YYLTYPE *loc, void *scanner, struct json *out, const char *message);
@@ -104,6 +105,7 @@ value
   : WORD
   | KEYWORD
   | GROUP
+  | UNTERMINATED     { $$ = NULL; static const char *expected[] = { "group" }; coded_error(out, scanner, "unterminated-group", &@1, "unterminated group", expected, 1); YYABORT; }
   ;
 %%
 
@@ -131,8 +133,12 @@ yyreport_syntax_error(const yypcontext_t *ctx, void *scanner, struct json *out)
   int n = yypcontext_expected_tokens(ctx, expected, MAX);
   const YYLTYPE *loc = yypcontext_location(ctx);
   const char *names[MAX];
-  int count = n < 0 ? 0 : n;
-  for (int i = 0; i < count; i++) names[i] = symbol_alias(yysymbol_name(expected[i]));
+  int count = 0;
+  /* The scanner's error token for an open bracket is never something to write: leave it out of what was expected. */
+  for (int i = 0; i < (n < 0 ? 0 : n); i++) {
+    const char *name = symbol_alias(yysymbol_name(expected[i]));
+    if (strcmp(name, "unterminated group") != 0) names[count++] = name;
+  }
   const char *found = symbol_alias(yysymbol_name(yypcontext_token(ctx)));
   /* A newline or the end of the file has no width of its own: point at the character before it. */
   int column = loc->first_column, end = loc->last_column;
