@@ -6,3 +6,5 @@
 /vendor/parsers/** -text
 # Grammar sources are hashed and composed verbatim on every platform.
 /grammar/** text eol=lf
+# Corpus fixtures are copied byte for byte from their upstream trees, line endings included.
+/test/fixtures/** -text

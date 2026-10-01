@@ -54,7 +54,27 @@ static void open_card(struct json *j, const char *kind) {
   if (j->cards++) put(j, ",", 1);
   puts_(j, "{\"kind\":"); put_string(j, kind);
   j->in_card = 1;
+  j->tokens_open = 0;
   j->tokens = 0;
+  j->model = 0;
+}
+
+/* The tokens array starts after every head field is written. */
+static void open_tokens(struct json *j) {
+  if (j->tokens_open) return;
+  puts_(j, ",\"tokens\":[");
+  j->tokens_open = 1;
+}
+
+static void close_card(struct json *j) {
+  if (!j->in_card) return;
+  open_tokens(j);
+  puts_(j, "]}");
+  j->in_card = 0;
+}
+
+static void upper(char *text) {
+  for (; *text; text++) *text = (char)toupper((unsigned char)*text);
 }
 
 void json_element(struct json *j, char *ref, char *head, int line, int column, int end) {
@@ -65,12 +85,25 @@ void json_element(struct json *j, char *ref, char *head, int line, int column, i
   char letter[2] = { (char)toupper((unsigned char)spelling[0]), 0 };
   puts_(j, ",\"letter\":"); put_string(j, letter);
   if (head) {
-    for (char *c = head + 1; *c; c++) *c = (char)toupper((unsigned char)*c);
+    upper(head + 1);
     puts_(j, ",\"selector\":"); put_string(j, head + 1);
   }
   put_span(j, line, column, end);
-  puts_(j, ",\"tokens\":[");
   free(ref); free(head);
+}
+
+void json_instance(struct json *j, char *ref, char *master, int line, int column, int end) {
+  if (j->failed) { free(ref); free(master); return; }
+  open_card(j, "element");
+  puts_(j, ",\"ref\":"); put_string(j, ref);
+  puts_(j, ",\"master\":"); put_string(j, master);
+  put_span(j, line, column, end);
+  free(ref); free(master);
+}
+
+void json_nodes_closed(struct json *j) {
+  if (j->failed || !j->in_card || j->tokens_open) return;
+  puts_(j, ",\"nodesClosed\":true");
 }
 
 void json_directive(struct json *j, char *name, int line, int column, int end) {
@@ -79,11 +112,12 @@ void json_directive(struct json *j, char *name, int line, int column, int end) {
   for (char *c = name; *c; c++) *c = (char)tolower((unsigned char)*c);
   puts_(j, ",\"name\":"); put_string(j, name);
   put_span(j, line, column, end);
-  puts_(j, ",\"tokens\":[");
+  j->model = strcmp(name, ".model") == 0;
   free(name);
 }
 
 static void open_token(struct json *j, const char *class, const char *text, int line, int column, int end) {
+  open_tokens(j);
   if (j->tokens++) put(j, ",", 1);
   puts_(j, "{\"class\":"); put_string(j, class);
   puts_(j, ",\"text\":"); put_string(j, text);
@@ -92,6 +126,12 @@ static void open_token(struct json *j, const char *class, const char *text, int 
 
 void json_token(struct json *j, const char *class, char *text, int line, int column, int end) {
   if (j->failed || !j->in_card) { free(text); return; }
+  /* A `.model` card keeps its name and its bare type word only. */
+  if (j->model && j->tokens >= 2) { free(text); return; }
+  if (j->model && j->tokens == 1) {
+    char *paren = strchr(text, '(');
+    if (paren) { end -= (int)strlen(paren); *paren = 0; }
+  }
   open_token(j, class, text, line, column, end);
   put(j, "}", 1);
   free(text);
@@ -99,6 +139,11 @@ void json_token(struct json *j, const char *class, char *text, int line, int col
 
 void json_pair(struct json *j, char *key, char *value, int line, int column, int end) {
   if (j->failed || !j->in_card) { free(key); free(value); return; }
+  if (j->model) {
+    char lowered[8] = "";
+    if (strlen(key) == 5) { memcpy(lowered, key, 6); for (char *c = lowered; *c; c++) *c = (char)tolower((unsigned char)*c); }
+    if (strcmp(lowered, "level") != 0) { free(key); free(value); return; }
+  }
   size_t n = strlen(key) + strlen(value) + 2;
   char *joined = malloc(n);
   snprintf(joined, n, "%s=%s", key, value);
@@ -110,16 +155,16 @@ void json_pair(struct json *j, char *key, char *value, int line, int column, int
 }
 
 void json_card_end(struct json *j) {
-  if (j->failed || !j->in_card) return;
-  puts_(j, "]}");
-  j->in_card = 0;
+  if (j->failed) return;
+  close_card(j);
 }
 
-void json_error(struct json *j, int line, int column, int end, const char *found_class, const char *found_text, const char **expected, int count) {
+void json_error(struct json *j, const char *code, int line, int column, int end, const char *found_class, const char *found_text, const char **expected, int count) {
   if (j->failed) return;
   j->failed = 1;
-  if (j->in_card) { puts_(j, "]}"); j->in_card = 0; }
+  close_card(j);
   puts_(j, "],\"error\":{");
+  if (code) { puts_(j, "\"code\":"); put_string(j, code); put(j, ",", 1); }
   puts_(j, "\"line\":"); put_int(j, line);
   puts_(j, ",\"column\":"); put_int(j, column);
   puts_(j, ",\"end\":"); put_int(j, end);
@@ -130,8 +175,10 @@ void json_error(struct json *j, int line, int column, int end, const char *found
   puts_(j, "]}");
 }
 
-const char *json_finish(struct json *j) {
-  if (j->in_card) { puts_(j, "]}"); j->in_card = 0; }
-  puts_(j, j->failed ? "}" : "]}");
+const char *json_finish(struct json *j, int after_end) {
+  close_card(j);
+  if (!j->failed) put(j, "]", 1);
+  if (after_end > 0) { puts_(j, ",\"afterEnd\":"); put_int(j, after_end); }
+  put(j, "}", 1);
   return j->buf;
 }

@@ -3,11 +3,11 @@
   "script": "scripts/grammars.sh",
   "modules": ["ngspice.cjs"],
   "inputs": {
-    "grammar/driver/driver.c": "f8450e03be3741f0ff83d81d77f9fe7e44b27271766f13a7f9168fd50dc306db",
-    "grammar/driver/json.c": "685bdb236b72934f6d6fd957926e6b772eec10b49b9e4e163b236e747a418be8",
-    "grammar/driver/driver.h": "79a0a947cab80a67b61ae439307b288a06be7c1090e9e3ebfceaf69684019153",
-    "grammar/driver/json.h": "5f67e8e608f113e56e430e8d0905884678b2c62bb4e3c887360aa91c764e101e",
-    "grammar/generated/ngspice.l": "fd7778ede08a0f40c7041e7187ad36f2a885d1ad255287df0b8e339c07369cbc",
-    "grammar/generated/ngspice.y": "68f9f7e36284744b3cb71d6303220ba7ce4e7640fd9591e67ded95eb799e27c4"
+    "grammar/driver/driver.c": "41cce01538195fb0231d6b18a57aea2732b24ca73e307377a695225c17efc623",
+    "grammar/driver/json.c": "e91a7736d4ca57ca9ecad94309cf2302ca34b8eca88186d1aac35f5aae975b61",
+    "grammar/driver/driver.h": "314ae1d5e4494cb7ea32e5f895c7c0306e36c180cae01c6e24ab4bdb1e48cabb",
+    "grammar/driver/json.h": "6be8f54fed4cc5af3694a63b19e97cf6f8ae3668f694898f8255d58c9958afaf",
+    "grammar/generated/ngspice.l": "a483f602b8e88601e5a44cc5d07ebdfb51a3e22d2d5035d0565963c0033a5510",
+    "grammar/generated/ngspice.y": "bf59ca48ac72ad923960011531493a816096056c4a9e32bb2b3c1063220e9780"
   }
 }
