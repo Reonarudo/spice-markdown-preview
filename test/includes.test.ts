@@ -1,7 +1,10 @@
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { normaliseIncludePath, resolveInclude, IncludePathError } from '../src/include-paths';
 import { parseNetlist, includeReferences, MAX_INCLUDE_DEPTH, type IncludeSet, type Netlist } from '../src/netlist';
+import { loadNgspice } from './helpers/ngspice';
+
+before(loadNgspice);
 
 function netlist(source: string, files: IncludeSet['files']): Netlist {
   const result = parseNetlist(source, { files });
@@ -62,7 +65,7 @@ test('includes nest, relative to the including file', () => {
   assert.equal(parts[0]!.kind, 'pnp');
 });
 
-test('.lib path section includes only that section; .lib path alone includes the whole file', () => {
+test('.lib path section includes only that section; .lib path alone is an error, as in ngspice', () => {
   const library = [
     '.lib tt', '.model N NMOS', '.endl',
     '.lib ff', '.model N PMOS', '.include missing.lib', '.endl'
@@ -70,7 +73,9 @@ test('.lib path section includes only that section; .lib path alone includes the
   // The ff section names a file nobody loaded; since it is never selected, that is no error.
   assert.equal(netlist('.lib "corners.lib" tt\nM1 d g s s N', { 'corners.lib': library, 'missing.lib': { error: 'not found' } }).parts[0]!.kind, 'nmos');
   assert.equal(netlist('.lib corners.lib ff\nM1 d g s s N', { 'corners.lib': library.replace('.include missing.lib\n', ''), 'missing.lib': { error: 'not found' } }).parts[0]!.kind, 'pmos');
-  assert.equal(netlist('.lib standard.bjt\nQ1 c b e Q', { 'standard.bjt': '.model Q PNP' }).parts[0]!.kind, 'pnp');
+  const whole = error('.lib standard.bjt\nQ1 c b e Q', { 'standard.bjt': '.model Q PNP' });
+  assert.equal(whole.message, '.lib standard.bjt needs a section name, e.g. .lib standard.bjt tt; ngspice reads a library only by section.');
+  assert.deepEqual([whole.line, whole.column], [1, 18]);
 });
 
 test('a missing section is an error at the section name', () => {
@@ -83,8 +88,8 @@ test('an error inside an included file is shown at the fence\'s include, naming 
   assert.equal(result.message, 'In stage.cir, line 2: D1 needs 2 nodes; found 1.');
   assert.deepEqual([result.line, result.column], [2, 9]);
   // Nested: still the fence's include, still the innermost file.
-  const nested = error('.include a.lib', { 'a.lib': '.include b.lib', 'b.lib': 'U1 x y z' });
-  assert.equal(nested.message, 'In b.lib, line 1: Element type U (U1) is not supported.');
+  const nested = error('.include a.lib', { 'a.lib': '.include b.lib', 'b.lib': 'Q1 x y' });
+  assert.equal(nested.message, 'In b.lib, line 1: Q1 needs 3 nodes; found 2.');
   assert.deepEqual([nested.line, nested.column], [1, 9]);
 });
 
@@ -126,7 +131,7 @@ test('notes about included elements name their file', () => {
   assert.deepEqual(notes, ['Stage.cir line 1: model 2N2222 of Q1 is not defined here; drawn as NPN.']);
 });
 
-test('includeReferences lists every file a text names, resolved from its own folder, skipping bad paths', () => {
+test('includeReferences lists every file a text names, resolved from its own folder, skipping bad paths and a sectionless .lib', () => {
   const text = [
     '* comment .include nope.lib',
     '.include "a.lib"',
@@ -139,13 +144,15 @@ test('includeReferences lists every file a text names, resolved from its own fol
     '.include /abs.lib',
     '.include a.lib'
   ].join('\n');
-  assert.deepEqual(includeReferences(text, 'models/x.lib'), ['models/a.lib', 'models/sub/b.lib', 'models/c.lib', 'models/d.lib', 'models/in-section.lib']);
+  assert.deepEqual(includeReferences(text, 'models/x.lib'), ['models/a.lib', 'models/sub/b.lib', 'models/c.lib', 'models/in-section.lib']);
   assert.deepEqual(includeReferences('+ broken', ''), []);
 });
 
-test('a whole-file .lib before a section definition is still an include', () => {
-  const { parts } = netlist('.lib models.bjt\n.lib local\n.model X NPN\n.endl\nQ1 c b e Q', { 'models.bjt': '.model Q PNP' });
+test('a section defined in the fence is skipped with a note; a sectionless .lib before it is still the error', () => {
+  const { parts, notes } = netlist('.lib local\n.model X NPN\n.endl\nQ1 c b e Q\n.model Q PNP', {});
   assert.equal(parts[0]!.kind, 'pnp');
+  assert.deepEqual(notes, ['Line 1: section local is not read; a library section is read only by .lib file section.']);
+  assert.match(error('.lib models.bjt\n.lib local\n.model X NPN\n.endl\nQ1 c b e Q', { 'models.bjt': '.model Q PNP' }).message, /needs a section name/);
 });
 
 test('includeReferences takes the dialect as an optional trailing argument, and ngspice is the default', () => {

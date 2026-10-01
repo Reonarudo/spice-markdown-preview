@@ -1,10 +1,13 @@
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { DOMParser } from '@xmldom/xmldom';
 import { loadSymbols } from '../src/schematic';
 import { renderNetlist } from '../src/draw-netlist';
+import { loadNgspice } from './helpers/ngspice';
+
+before(loadNgspice);
 
 const symbols = loadSymbols(readFileSync('src/skin/symbols.svg', 'utf8'));
 const elk = new ELK();

@@ -1,6 +1,9 @@
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { closure, MAX_FILES, MAX_TOTAL_BYTES, type CachedFile } from '../src/include-closure';
+import { loadNgspice } from './helpers/ngspice';
+
+before(loadNgspice);
 
 const file = (text: string): CachedFile => ({ text, bytes: text.length, digest: `d:${text}` });
 

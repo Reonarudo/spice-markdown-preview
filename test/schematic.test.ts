@@ -1,9 +1,12 @@
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ELK from 'elkjs/lib/elk.bundled.js';
 import { parseNetlist, GROUND, type Netlist } from '../src/netlist';
 import { blockSymbol, labelBox, layoutSchematic, loadSymbols, labelText, MAX_LABEL, type Schematic } from '../src/schematic';
+import { loadNgspice } from './helpers/ngspice';
+
+before(loadNgspice);
 
 const symbols = loadSymbols(readFileSync('src/skin/symbols.svg', 'utf8'));
 const elk = new ELK();

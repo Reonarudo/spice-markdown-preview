@@ -33,22 +33,31 @@ connected, not where it goes.
 | `V`, `I` | Source: + and − marks, or an arrow from n+ to n− |
 | `Q` | NPN or PNP by its `.model`, with the model name |
 | `M` | NMOS or PMOS by its `.model`; body drawn if not the source |
+| `M` with a `VDMOS` model | Three-pin NMOS or PMOS (`pchan`, `VDMOSP`) |
 | `X` | A box titled with the subcircuit, pins named from its `.subckt` |
-| `B` `E` `F` `G` `H` `J` `O` `S` `T` `W` `Z` | A box titled with what it is |
+| `A`, `N` | A box titled with the code model's or Verilog-A model's type, pins numbered |
+| `B` `E` `F` `G` `H` `J` `O` `P` `S` `T` `U` `W` `Y` `Z` | A box titled with what it is |
+
+Every element letter ngspice knows is read with the terminals ngspice gives it:
+`E`/`G` in their linear, `POLY(n)`, `vol=`/`cur=`/`value=` and `TABLE` forms,
+`Q` with substrate and thermal nodes, `M` with three to seven nodes by its
+model, `D` with a thermal node, and `X1 (a b) sub` with its nodes in
+parentheses.
 
 Every connection to ground (`0` or `gnd`) gets its own ground symbol. Node names
-are case-insensitive, as in SPICE. `+` continuation lines and `*`, `;`, `$` and
-`//` comments work as in ngspice. Analysis directives such as `.tran` are
-skipped, as are `.subckt` bodies and `.control` blocks; nothing after `.end` is
-read.
+are case-insensitive, as in SPICE. `+` and `\\` continuation lines, `*`, `#`,
+`;`, `$` and `//` comments, and `'…'` and `{…}` expressions work as in ngspice.
+Analysis directives such as `.tran` are skipped, as are `.subckt` bodies (which
+may nest) and `.control` blocks. The first `.end` ends the netlist; `.if` is not
+evaluated, so its first branch is drawn.
 
-The first line of a SPICE file is its title; in a fence, start it with `*` to
-make it a comment.
+The first line of a SPICE file is its title; a fence has none, so start a title
+with `*` to make it a comment.
 
 A few things are noted in the *SPICE Schematic Preview* output channel rather
 than shown: a transistor whose model is not defined (drawn as NPN or NMOS), a
-subcircuit that is not defined (pins numbered), a bipolar substrate node, and
-`K` coupling.
+subcircuit that is not defined (pins numbered), substrate and thermal nodes,
+`K` coupling, lines after `.end`, and the `.elseif`/`.else` branches of an `.if`.
 
 ## Examples
 
@@ -180,8 +189,8 @@ X1 inp inn vcc vee out LM358
 ```
 ````
 
-`.lib file section` reads one section; `.lib file` alone reads the whole file,
-as in LTspice. Includes may nest. Elements in included files are drawn; an error
+`.lib file section` reads one section; `.lib file` alone is an error, as in
+ngspice. `.inc` and `.incl` are `.include`. Includes may nest. Elements in included files are drawn; an error
 inside one is shown at the fence's include, naming the file and line.
 
 Files are read only when all of these hold; otherwise the schematic draws

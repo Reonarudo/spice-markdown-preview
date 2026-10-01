@@ -192,12 +192,16 @@ interface Box {
 
 const ELK_SIDE: Record<Side, string> = { top: 'NORTH', bottom: 'SOUTH', left: 'WEST', right: 'EAST' };
 
-/** The symbol a part is drawn with: a MOSFET whose body is its source uses the 3-pin symbol. */
+/**
+ * The symbol a part is drawn with: a MOSFET whose body is its source, or that has none (a VDMOS),
+ * uses the 3-pin symbol.
+ */
 function symbolFor(part: Part, symbols: Symbols): SchematicSymbol {
   if (part.kind === 'block') return blockSymbol(part);
   if (part.kind === 'nmos' || part.kind === 'pmos') {
     const node = (name: string) => part.pins.find((pin) => pin.name === name)?.node;
-    if (node('B') === node('S')) return symbols.get(`${part.kind}3`)!;
+    const body = node('B');
+    if (body === undefined || body === node('S')) return symbols.get(`${part.kind}3`)!;
   }
   return symbols.get(KIND_TO_TYPE[part.kind])!;
 }

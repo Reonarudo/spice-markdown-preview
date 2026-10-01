@@ -2,13 +2,18 @@
  * A SPICE netlist reader for drawing, not simulating: it keeps every element's kind, pins and value
  * and skips everything that only matters to a simulator.
  *
- * Total by construction: every input yields either a netlist or one error naming a line and
- * column. Nothing is read from disk here: `.include` and `.lib` are expanded from the files the
- * caller supplies, and noted and skipped when it supplies none.
+ * The dialect's generated parser (ADR 0008) splits each file into cards and tokens; this module
+ * owns everything else — includes, nesting, models, the element catalogue's forms (ADR 0007),
+ * notes and every message. Total by construction: every input yields either a netlist or one
+ * error naming a line and column. Nothing is read from disk here: `.include` and `.lib` are
+ * expanded from the files the caller supplies, and noted and skipped when it supplies none.
  */
 import { IncludePathError, resolveInclude } from './include-paths';
-import { elementTypeForLetter, type ElementTypeId, type SpellingHints } from './catalogue/index';
-import type { DialectId } from './catalogue/types';
+import { CATALOGUE, elementTypeForLetter, type ElementTypeId, type SpellingHints } from './catalogue/index';
+import { DIALECTS } from './catalogue/dialects';
+import type { CountSource, DialectId, ElementType, Form, PinRule, Terminal, Terminals } from './catalogue/types';
+import { parse } from './parser/registry';
+import type { Card as ParsedCard, ParseError as ParserError, Token as ParsedToken } from './parser/contract';
 
 export type { ElementTypeId };
 
@@ -81,15 +86,22 @@ interface Position {
   anchor?: { line: number; column: number };
 }
 
-interface Token extends Position {
-  text: string;
+/** One card as the parser returned it, placed in its file. */
+interface Card {
+  parsed: ParsedCard;
+  file: string;
+  anchor?: Position['anchor'];
+  /** The file's lines — for the one thing the cards do not say, where a parenthesised node list closes. */
+  lines: string[];
 }
 
-/** One element or directive, after continuation lines are joined and comments removed. */
-interface Card {
-  tokens: Token[];
-  line: number;
-  file: string;
+/** What a `.model` line says that decides a drawing. */
+interface Model {
+  /** The type word, lower-cased: `npn`, `vdmos`. */
+  type: string;
+  level?: number;
+  /** Bare words after the type, lower-cased: ngspice's `pchan`. */
+  flags: string[];
 }
 
 class ParseError extends Error {
@@ -98,44 +110,28 @@ class ParseError extends Error {
   }
 }
 
-/** Letters drawn as boxes, with how many nodes they take and what the box says. */
-const BLOCKS: Record<string, { nodes: number; title: string }> = {
-  E: { nodes: 4, title: 'VCVS' },
-  G: { nodes: 4, title: 'VCCS' },
-  F: { nodes: 2, title: 'CCCS' },
-  H: { nodes: 2, title: 'CCVS' },
-  B: { nodes: 2, title: 'B source' },
-  J: { nodes: 3, title: 'JFET' },
-  Z: { nodes: 3, title: 'MESFET' },
-  S: { nodes: 4, title: 'switch' },
-  W: { nodes: 2, title: 'switch' },
-  T: { nodes: 4, title: 'line' },
-  O: { nodes: 4, title: 'lossy line' }
-};
+const TITLE_HINT = ' If this line is a title, start it with * to make it a comment.';
 
-/** Pin names of block kinds with conventional terminals; otherwise pins are numbered. */
-const BLOCK_PINS: Record<string, string[]> = {
-  E: ['n+', 'n-', 'nc+', 'nc-'],
-  G: ['n+', 'n-', 'nc+', 'nc-'],
-  F: ['n+', 'n-'],
-  H: ['n+', 'n-'],
-  B: ['n+', 'n-'],
-  J: ['D', 'G', 'S'],
-  Z: ['D', 'G', 'S'],
-  S: ['n+', 'n-', 'nc+', 'nc-'],
-  W: ['n+', 'n-'],
-  T: ['A+', 'A-', 'B+', 'B-'],
-  O: ['A+', 'A-', 'B+', 'B-']
-};
+/**
+ * Dialects in which a one-argument `.lib file` reads the whole file. ngspice reads a library only
+ * by section (`.lib file section`); the overlay tickets settle the others.
+ */
+const WHOLE_FILE_LIB: ReadonlySet<DialectId> = new Set(['ltspice', 'pspice']);
+
+/** Types whose value may not be left off; a source without one is simply a 0 V or 0 A source. */
+const VALUE_REQUIRED: ReadonlySet<ElementTypeId> = new Set(['resistor', 'capacitor', 'inductor']);
+
+/** What the note calls an optional terminal that a symbol does not draw. */
+const UNDRAWN_TERMINALS: Readonly<Record<string, string>> = { S: 'substrate', tj: 'thermal', tc: 'thermal', tl: 'thermal', T: 'thermal', P: 'body contact', body: 'body' };
 
 /**
  * Read a netlist. `includes` supplies the files `.include` and `.lib` name; without it, every
  * include is noted and skipped. `dialect` names the generated parser the netlist is read with
- * (ADR 0008); the reader below still reads every dialect as ngspice until that parser is wired in.
+ * (ADR 0008); whoever calls this first must have loaded that parser into the registry.
  */
 export function parseNetlist(source: string, includes?: IncludeSet, dialect: DialectId = 'ngspice'): ParseResult {
   try {
-    return { ok: true, netlist: read(source, includes ?? { files: {}, unavailable: 'no files are available here' }) };
+    return { ok: true, netlist: read(source, includes ?? { files: {}, unavailable: 'no files are available here' }, dialect) };
   } catch (error) {
     if (error instanceof ParseError) {
       const { at } = error;
@@ -156,9 +152,9 @@ export function parseNetlist(source: string, includes?: IncludeSet, dialect: Dia
 export function includeReferences(text: string, from: string, dialect: DialectId = 'ngspice'): string[] {
   const keys: string[] = [];
   try {
-    const cards = toCards(text, from);
+    const { cards } = toCards(text, from, undefined, dialect);
     cards.forEach((card, index) => {
-      const target = includeTarget(cards, index);
+      const target = includeTarget(cards, index, dialect);
       if (!target) return;
       try {
         keys.push(resolveInclude(from, target.path.text));
@@ -172,9 +168,26 @@ export function includeReferences(text: string, from: string, dialect: DialectId
   return [...new Set(keys)];
 }
 
+// --- Positions and wording -------------------------------------------------------------------------
+
+function at(card: Card, span: { line: number; column: number }): Position {
+  return { line: span.line, column: span.column, file: card.file, ...(card.anchor ? { anchor: card.anchor } : {}) };
+}
+
+/** A card's head: the element name or the directive. */
+function head(card: Card): Position {
+  return at(card, card.parsed);
+}
+
+/** Just past a card's last token, where a missing one would go. */
+function end(card: Card): Position {
+  const last = card.parsed.tokens.at(-1) ?? card.parsed;
+  return at(card, { line: last.line, column: last.end + 1 });
+}
+
 /** Where a card is, for notes and messages: `line 4` in the fence, `models.lib line 4` elsewhere. */
-function where(position: { line: number; file: string }): string {
-  return position.file ? `${position.file} line ${position.line}` : `line ${position.line}`;
+function where(card: Card): string {
+  return card.file ? `${card.file} line ${card.parsed.line}` : `line ${card.parsed.line}`;
 }
 
 function capitalise(text: string): string {
@@ -182,17 +195,75 @@ function capitalise(text: string): string {
 }
 
 /**
- * Whether the card at `index` includes a file, and which: `.include path`, `.inc path`,
- * `.lib path section`, or `.lib path` when no `.endl` follows (LTspice's whole-file `.lib`).
- * A one-argument `.lib` that an `.endl` closes defines a section instead.
+ * A SPICE file's first line is its title, which in a fence usually fails to parse as an element.
+ * Say so where it would help.
  */
-function includeTarget(cards: Card[], index: number): { path: Token; section?: Token } | undefined {
-  const [head, path, section] = cards[index]!.tokens;
-  const word = head!.text.toLowerCase();
-  if (word === '.include' || word === '.inc') return path ? { path } : undefined;
-  if (word !== '.lib' || !path) return undefined;
+function titleHint(position: { line: number; file: string }): string {
+  return position.line === 1 && position.file === '' ? TITLE_HINT : '';
+}
+
+/** The directive a card is, lower-cased with its dot, or `''` for an element. */
+function directive(card: Card): string {
+  return card.parsed.kind === 'directive' ? card.parsed.name : '';
+}
+
+/** The text a directive's argument was written as, without the quotes a path may carry. */
+function unquote(text: string): string {
+  return text.length >= 2 && (text[0] === '"' || text[0] === "'") && text.at(-1) === text[0] ? text.slice(1, -1) : text;
+}
+
+// --- Cards -----------------------------------------------------------------------------------------
+
+/**
+ * Split a file into cards with the dialect's parser. The cards before a structural error are
+ * returned with it, so that `includeReferences` can stay best-effort; `read` throws it.
+ */
+function toCards(text: string, file: string, anchor: Position['anchor'], dialect: DialectId, notes?: string[]): { cards: Card[]; error?: ParseError } {
+  const output = parse(dialect, text);
+  const lines = text.split(/\r?\n/);
+  const cards: Card[] = output.cards.map((parsed) => ({ parsed, file, ...(anchor ? { anchor } : {}), lines }));
+  if (output.afterEnd !== undefined && notes) {
+    const after = output.afterEnd;
+    notes.push(`${capitalise(where(cards.at(-1)!))}: ${after} ${after === 1 ? 'line' : 'lines'} after .end ${after === 1 ? 'is' : 'are'} not read.`);
+  }
+  return output.error ? { cards, error: structuralError(output.error, file, anchor) } : { cards };
+}
+
+/** The parser's one error in today's wording: coded errors byte for byte, the rest generically. */
+function structuralError(error: ParserError, file: string, anchor: Position['anchor']): ParseError {
+  const position: Position = { line: error.line, column: error.column, file, ...(anchor ? { anchor } : {}) };
+  const hint = titleHint(position);
+  switch (error.code) {
+    case 'orphan-continuation':
+      return new ParseError('A continuation line (+) has nothing to continue.', position);
+    case 'not-an-element':
+      return new ParseError(`"${error.found.text}" is not an element name. Element names start with a letter, e.g. R1.${hint}`, position);
+    case 'unterminated-group':
+      return new ParseError(`The ${error.found.text} opened here is not closed on its line.${hint}`, position);
+    default: {
+      const found = error.found.class === 'newline' ? 'end of line' : error.found.class === 'end of file' ? 'end of file' : `${error.found.class} "${error.found.text}"`;
+      const expected = error.expected.length > 1 ? `${error.expected.slice(0, -1).join(', ')} or ${error.expected.at(-1)}` : error.expected[0] ?? 'something else';
+      return new ParseError(`Unexpected ${found}; expected ${expected}.${hint}`, position);
+    }
+  }
+}
+
+// --- Includes --------------------------------------------------------------------------------------
+
+/**
+ * Whether the card at `index` includes a file, and which: any `.inc…` directive (`.include`,
+ * `.inc`, `.incl`), `.lib path section`, or `.lib path` alone in a dialect that reads a whole
+ * file by it. A one-argument `.lib` that an `.endl` closes defines a section instead.
+ */
+function includeTarget(cards: Card[], index: number, dialect: DialectId): { path: ParsedToken; section?: ParsedToken } | undefined {
+  const card = cards[index]!;
+  const name = directive(card);
+  const [path, section] = card.parsed.tokens;
+  if (name.startsWith('.inc')) return path ? { path } : undefined;
+  if (name !== '.lib' || !path) return undefined;
   if (section) return { path, section };
-  return isSectionStart(cards, index) ? undefined : { path };
+  if (isSectionStart(cards, index)) return undefined;
+  return WHOLE_FILE_LIB.has(dialect) ? { path } : undefined;
 }
 
 /**
@@ -201,12 +272,12 @@ function includeTarget(cards: Card[], index: number): { path: Token; section?: T
  */
 function isSectionStart(cards: Card[], index: number): boolean {
   if (!isOneArgumentLib(cards[index]!)) return false;
-  const next = cards.slice(index + 1).find((later) => isOneArgumentLib(later) || later.tokens[0]!.text.toLowerCase() === '.endl');
+  const next = cards.slice(index + 1).find((later) => isOneArgumentLib(later) || directive(later) === '.endl');
   return next !== undefined && !isOneArgumentLib(next);
 }
 
 function isOneArgumentLib(card: Card): boolean {
-  return card.tokens.length === 2 && card.tokens[0]!.text.toLowerCase() === '.lib';
+  return directive(card) === '.lib' && card.parsed.tokens.length === 1;
 }
 
 /**
@@ -214,14 +285,18 @@ function isOneArgumentLib(card: Card): boolean {
  * anything else. Section definitions (`.lib name` … `.endl`) are dropped unless a `.lib path name`
  * selected them.
  */
-function expand(cards: Card[], from: string, includes: IncludeSet, notes: string[], stack: string[]): Card[] {
+function expand(cards: Card[], from: string, includes: IncludeSet, notes: string[], stack: string[], dialect: DialectId): Card[] {
   const out: Card[] = [];
   for (let index = 0; index < cards.length; index++) {
     const card = cards[index]!;
-    const head = card.tokens[0]!;
-    const word = head.text.toLowerCase();
+    const word = directive(card);
     if (isSectionStart(cards, index)) {
-      while (index < cards.length && cards[index]!.tokens[0]!.text.toLowerCase() !== '.endl') index++;
+      // Only a library file selected by `.lib path name` defines sections; ngspice refuses them
+      // anywhere else, and the drawing simply goes on without them.
+      if (stack.length === 0 || !WHOLE_FILE_LIB.has(dialect)) {
+        notes.push(`${capitalise(where(card))}: section ${card.parsed.tokens[0]!.text} is not read; a library section is read only by .lib file section.`);
+      }
+      while (index < cards.length && directive(cards[index]!) !== '.endl') index++;
       continue;
     }
     if (word === '.endl') continue;
@@ -231,10 +306,16 @@ function expand(cards: Card[], from: string, includes: IncludeSet, notes: string
       if (from === '') out.push(card);
       break;
     }
-    if (word === '.include' || word === '.inc' || word === '.lib') {
-      const target = includeTarget(cards, index);
-      if (!target) throw new ParseError(`${head.text} needs a file name.`, end(card));
-      out.push(...include(card, target, from, includes, notes, stack));
+    if (word.startsWith('.inc') || word === '.lib') {
+      const target = includeTarget(cards, index, dialect);
+      if (!target) {
+        if (isOneArgumentLib(card)) {
+          const path = card.parsed.tokens[0]!;
+          throw new ParseError(`.lib ${path.text} needs a section name, e.g. .lib ${path.text} tt; ${dialect} reads a library only by section.`, at(card, { line: path.line, column: path.end + 1 }));
+        }
+        throw new ParseError(`${word} needs a file name.`, end(card));
+      }
+      out.push(...include(card, target, from, includes, notes, stack, dialect));
       continue;
     }
     out.push(card);
@@ -242,99 +323,140 @@ function expand(cards: Card[], from: string, includes: IncludeSet, notes: string
   return out;
 }
 
-function include(card: Card, target: { path: Token; section?: Token }, from: string, includes: IncludeSet, notes: string[], stack: string[]): Card[] {
+function include(card: Card, target: { path: ParsedToken; section?: ParsedToken }, from: string, includes: IncludeSet, notes: string[], stack: string[], dialect: DialectId): Card[] {
   const { path, section } = target;
+  const here = (token: ParsedToken) => at(card, token);
   let key: string;
   try {
     key = resolveInclude(from, path.text);
   } catch (error) {
-    if (error instanceof IncludePathError) throw new ParseError(`${error.message} (${path.text})`, path);
+    if (error instanceof IncludePathError) throw new ParseError(`${error.message} (${path.text})`, here(path));
     throw error;
   }
   if (includes.unavailable !== undefined) {
-    notes.push(`${capitalise(where(card))}: ${card.tokens[0]!.text} ${path.text} is not read: ${includes.unavailable}.`);
+    notes.push(`${capitalise(where(card))}: ${directive(card)} ${path.text} is not read: ${includes.unavailable}.`);
     return [];
   }
-  if (stack.includes(key)) throw new ParseError(`${path.text} includes itself.`, path);
-  if (stack.length >= MAX_INCLUDE_DEPTH) throw new ParseError(`Includes are nested more than ${MAX_INCLUDE_DEPTH} deep.`, path);
+  const shown = unquote(path.text);
+  if (stack.includes(key)) throw new ParseError(`${shown} includes itself.`, here(path));
+  if (stack.length >= MAX_INCLUDE_DEPTH) throw new ParseError(`Includes are nested more than ${MAX_INCLUDE_DEPTH} deep.`, here(path));
   const entry = includes.files[key];
-  if (entry === undefined) throw new ParseError(`${path.text} could not be read.`, path);
-  if (typeof entry !== 'string') throw new ParseError(`${path.text} could not be read: ${entry.error}`, path);
+  if (entry === undefined) throw new ParseError(`${shown} could not be read.`, here(path));
+  if (typeof entry !== 'string') throw new ParseError(`${shown} could not be read: ${entry.error}`, here(path));
   // Every position in the included file points back at this include in the fence.
-  const anchor = path.anchor ?? { line: path.line, column: path.column };
-  let cards = toCards(entry, key, anchor);
+  const anchor = card.anchor ?? { line: path.line, column: path.column };
+  const found = toCards(entry, key, anchor, dialect, notes);
+  if (found.error) throw found.error;
+  let { cards } = found;
   if (section) {
     const name = section.text.toLowerCase();
-    const start = cards.findIndex((c) => c.tokens.length === 2 && c.tokens[0]!.text.toLowerCase() === '.lib' && c.tokens[1]!.text.toLowerCase() === name);
-    if (start === -1) throw new ParseError(`${path.text} has no section ${section.text}.`, section);
-    const stop = cards.findIndex((c, i) => i > start && c.tokens[0]!.text.toLowerCase() === '.endl');
+    const start = cards.findIndex((c) => isOneArgumentLib(c) && c.parsed.tokens[0]!.text.toLowerCase() === name);
+    if (start === -1) throw new ParseError(`${shown} has no section ${section.text}.`, here(section));
+    const stop = cards.findIndex((c, i) => i > start && directive(c) === '.endl');
     cards = cards.slice(start + 1, stop === -1 ? undefined : stop);
   }
-  return expand(cards, key, includes, notes, [...stack, key]);
+  return expand(cards, key, includes, notes, [...stack, key], dialect);
 }
 
-function read(source: string, includes: IncludeSet): Netlist {
+// --- Reading ---------------------------------------------------------------------------------------
+
+interface Context {
+  dialect: DialectId;
+  models: Map<string, Model>;
+  subcircuits: Map<string, string[]>;
+  notes: string[];
+}
+
+function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist {
   const notes: string[] = [];
-  const cards = expand(toCards(source, ''), '', includes, notes, []);
-  const models = new Map<string, string>();
-  const subcircuits = new Map<string, string[]>();
+  const top = toCards(source, '', undefined, dialect, notes);
+  if (top.error) throw top.error;
+  const cards = expand(top.cards, '', includes, notes, [], dialect);
+  const context: Context = { dialect, models: new Map(), subcircuits: new Map(), notes };
   const elements: Card[] = [];
 
   // First pass: directives, so that a model or subcircuit defined below its use still counts.
-  let inside: { kind: 'subckt' | 'control'; card: Card } | undefined;
+  let inside: { kind: 'subckt' | 'control'; card: Card; depth: number } | undefined;
+  // `.if` is not evaluated: the first branch is read and the others skipped, with a note.
+  const conditionals: { card: Card; skipping: boolean; noted: boolean }[] = [];
   for (const card of cards) {
-    const head = card.tokens[0]!;
-    const word = head.text.toLowerCase();
+    const word = directive(card);
     if (inside) {
-      if ((inside.kind === 'subckt' && word === '.ends') || (inside.kind === 'control' && word === '.endc')) {
+      if (inside.kind === 'subckt' && (word === '.subckt' || word === '.macro')) inside.depth++;
+      if ((inside.kind === 'subckt' && (word === '.ends' || word === '.eom') && --inside.depth === 0) || (inside.kind === 'control' && word === '.endc')) {
         inside = undefined;
       }
       continue;
     }
-    if (word === '.end') break;
-    if (word === '.subckt') {
-      const [, name, ...rest] = card.tokens;
-      if (!name) throw new ParseError('.subckt needs a name.', head);
-      const ports: string[] = [];
-      for (const token of rest) {
-        if (/^params:$/i.test(token.text) || token.text.includes('=')) break;
-        ports.push(token.text);
+    if (word === '.if') {
+      conditionals.push({ card, skipping: false, noted: false });
+      continue;
+    }
+    if (word === '.elseif' || word === '.else' || word === '.endif') {
+      const open = conditionals.at(-1);
+      if (!open) throw new ParseError(`${word} has no matching .if.`, head(card));
+      if (word === '.endif') {
+        conditionals.pop();
+        continue;
       }
-      subcircuits.set(name.text.toLowerCase(), ports);
-      inside = { kind: 'subckt', card };
+      // One note per `.if` with alternatives, and none for an `.if` inside a branch already skipped.
+      if (!open.noted && !conditionals.slice(0, -1).some((outer) => outer.skipping)) {
+        open.noted = true;
+        notes.push(`${capitalise(where(open.card))}: .if is not evaluated; its first branch is drawn and the ${word} branches are skipped.`);
+      }
+      open.skipping = true;
+      continue;
+    }
+    if (conditionals.some((open) => open.skipping)) continue;
+    if (word === '.end') break;
+    if (word === '.subckt' || word === '.macro') {
+      const [name, ...rest] = card.parsed.tokens;
+      if (!name) throw new ParseError(`${word} needs a name.`, head(card));
+      context.subcircuits.set(name.text.toLowerCase(), subcircuitPorts(rest));
+      inside = { kind: 'subckt', card, depth: 1 };
       continue;
     }
     if (word === '.control') {
-      inside = { kind: 'control', card };
+      inside = { kind: 'control', card, depth: 1 };
       continue;
     }
     if (word === '.model') {
-      const [, name, type] = card.tokens;
-      if (name && type) models.set(name.text.toLowerCase(), type.text.replace(/\(.*$/, '').toLowerCase());
+      const [name, type, ...rest] = card.parsed.tokens;
+      if (name && type) {
+        const level = rest.find((token) => token.class === 'pair' && token.key!.toLowerCase() === 'level');
+        const parsed = level ? Number.parseInt(level.value!, 10) : Number.NaN;
+        context.models.set(name.text.toLowerCase(), {
+          type: type.text.toLowerCase(),
+          ...(Number.isNaN(parsed) ? {} : { level: parsed }),
+          flags: rest.filter((token) => token.class === 'word').map((token) => token.text.toLowerCase())
+        });
+      }
       continue;
     }
-    if (word.startsWith('.')) continue;
+    if (word) continue;
     elements.push(card);
   }
   if (inside) {
-    const end = inside.kind === 'subckt' ? '.ends' : '.endc';
-    throw new ParseError(`${inside.card.tokens[0]!.text} has no matching ${end}.`, inside.card.tokens[0]!);
+    const close = inside.kind === 'subckt' ? '.ends' : '.endc';
+    throw new ParseError(`${directive(inside.card)} has no matching ${close}.`, head(inside.card));
   }
+  const unclosed = conditionals.at(-1);
+  if (unclosed) throw new ParseError('.if has no matching .endif.', head(unclosed.card));
 
   const parts: Part[] = [];
   const seen = new Map<string, Card>();
   for (const card of elements) {
-    const part = toPart(card, models, subcircuits, notes);
+    const part = toPart(card, context);
     if (!part) continue;
     const key = part.ref.toLowerCase();
     const earlier = seen.get(key);
     if (earlier !== undefined) {
-      throw new ParseError(`Duplicate element ${part.ref}; it is also defined on ${where(earlier)}.`, card.tokens[0]!);
+      throw new ParseError(`Duplicate element ${part.ref}; it is also defined on ${where(earlier)}.`, head(card));
     }
     seen.set(key, card);
     parts.push(part);
     if (parts.length > MAX_PARTS) {
-      throw new ParseError(`More than ${MAX_PARTS} elements; split the circuit into several fences.`, card.tokens[0]!);
+      throw new ParseError(`More than ${MAX_PARTS} elements; split the circuit into several fences.`, head(card));
     }
   }
   if (parts.length === 0) {
@@ -343,223 +465,415 @@ function read(source: string, includes: IncludeSet): Netlist {
   return { parts, notes };
 }
 
-/** Split into cards: drop comments, join `+` continuation lines, keep every token's position. */
-function toCards(source: string, file: string, anchor?: Position['anchor']): Card[] {
-  const cards: Card[] = [];
-  source.split('\n').forEach((raw, index) => {
-    const line = index + 1;
-    const text = stripComment(raw.replace(/\r$/, ''));
-    const trimmed = text.trimStart();
-    if (!trimmed || trimmed.startsWith('*')) return;
-    const tokens = tokenize(text, { line, column: 0, file, ...(anchor ? { anchor } : {}) });
-    if (trimmed.startsWith('+')) {
-      const previous = cards.at(-1);
-      if (!previous) throw new ParseError('A continuation line (+) has nothing to continue.', tokens[0]!);
-      // The `+` itself is not a token of the card it continues.
-      const first = tokens[0]!;
-      const rest = first.text === '+' ? tokens.slice(1) : [{ ...first, text: first.text.slice(1), column: first.column + 1 }, ...tokens.slice(1)];
-      previous.tokens.push(...rest);
-      return;
-    }
-    cards.push({ tokens, line, file });
-  });
-  return cards;
-}
-
-/** Remove `;` comments anywhere, and `$` or `//` comments that follow whitespace (ngspice). */
-function stripComment(line: string): string {
-  const match = /;|(?<=\s)(?:\$|\/\/)/.exec(line);
-  return match ? line.slice(0, match.index) : line;
-}
-
-/**
- * Split on whitespace and commas, but keep a parenthesised group — `SIN(0 1 1k)` — and a
- * `name = value` pair together, so that values stay one token.
- */
-function tokenize(text: string, at: Position): Token[] {
-  const tokens: Token[] = [];
-  let index = 0;
-  while (index < text.length) {
-    while (index < text.length && /[\s,]/.test(text[index]!)) index++;
-    if (index >= text.length) break;
-    const start = index;
-    let depth = 0;
-    while (index < text.length) {
-      const char = text[index]!;
-      if (char === '(' || char === '{') depth++;
-      else if ((char === ')' || char === '}') && depth > 0) depth--;
-      else if (depth === 0 && /[\s,]/.test(char)) break;
-      index++;
-    }
-    tokens.push({ ...at, text: text.slice(start, index), column: start });
+/** The ports of `.subckt name ports… [params: …]`, written bare or as one parenthesised group. */
+function subcircuitPorts(tokens: ParsedToken[]): string[] {
+  const [first] = tokens;
+  if (first?.class === 'group' && first.text.startsWith('(')) {
+    return first.text.slice(1, -1).split(/[\s,]+/).filter((port) => port.length > 0);
   }
-  // Rejoin `W = 1u` into `W=1u`, which ngspice also accepts.
-  for (let i = 1; i < tokens.length - 1; i++) {
-    if (tokens[i]!.text === '=') {
-      tokens.splice(i - 1, 3, { ...tokens[i - 1]!, text: `${tokens[i - 1]!.text}=${tokens[i + 1]!.text}` });
-      i--;
-    }
+  const ports: string[] = [];
+  for (const token of tokens) {
+    if (token.class !== 'word' || /^params:$/i.test(token.text)) break;
+    ports.push(token.text);
   }
-  return tokens;
+  return ports;
 }
 
-function toPart(card: Card, models: Map<string, string>, subcircuits: Map<string, string[]>, notes: string[]): Part | undefined {
-  const [head, ...args] = card.tokens as [Token, ...Token[]];
-  const ref = head.text;
-  if (!/^[A-Za-z][\w.+\-#!@$%&|[\]]*$/.test(ref)) {
-    throw new ParseError(`"${ref}" is not an element name. Element names start with a letter, e.g. R1.`, head);
-  }
-  const letter = ref[0]!.toUpperCase();
-  const line = card.line;
-  const origin = card.file ? { file: card.file } : {};
-  const at = capitalise(where(card));
-  // This reader reads ngspice only; the catalogue's ngspice spellings name the element type.
-  const type = (hints: SpellingHints = {}): ElementTypeId => {
-    const found = elementTypeForLetter('ngspice', letter, hints);
-    if (found === undefined) throw new ParseError(`Element type ${letter} (${ref}) is not supported.${titleHint(card)}`, head);
-    return found;
-  };
+// --- Elements --------------------------------------------------------------------------------------
 
-  const nodes = (count: number): string[] => {
-    const found = args.slice(0, count).filter((token) => !token.text.includes('='));
-    if (found.length < count) {
-      // Point at the first token that is not a node, or just past the end of the element.
-      const where = args[found.length] ?? end(card);
-      throw new ParseError(`${ref} needs ${count} nodes; found ${found.length}.${titleHint(card)}`, where);
-    }
-    return found.map((token) => normalise(token.text));
-  };
-  const rest = (from: number): string => args.slice(from).map((token) => token.text).join(' ');
-  const needValue = (from: number, what: string): void => {
-    if (args.length <= from) {
-      throw new ParseError(`${ref} needs ${what} after its nodes.${titleHint(card)}`, end(card));
-    }
-  };
-
-  switch (letter) {
-    case 'R':
-    case 'C':
-    case 'L': {
-      const [a, b] = nodes(2);
-      needValue(2, 'a value');
-      const kind = letter === 'R' ? 'resistor' : letter === 'C' ? 'capacitor' : 'inductor';
-      return { ref, type: type(), kind, pins: [{ name: 'A', node: a! }, { name: 'B', node: b! }], value: rest(2), line, ...origin };
-    }
-    case 'D': {
-      const [anode, cathode] = nodes(2);
-      needValue(2, 'a model name');
-      return { ref, type: type(), kind: 'diode', pins: [{ name: '+', node: anode! }, { name: '-', node: cathode! }], value: rest(2), line, ...origin };
-    }
-    case 'V':
-    case 'I': {
-      const [plus, minus] = nodes(2);
-      return {
-        ref,
-        type: type(),
-        kind: letter === 'V' ? 'vsource' : 'isource',
-        pins: [{ name: '+', node: plus! }, { name: '-', node: minus! }],
-        value: rest(2),
-        line,
-        ...origin
-      };
-    }
-    case 'Q': {
-      // Q c b e [substrate] model: the model is the first token that is a defined model, or else
-      // the fourth token unless a fifth, non-numeric one follows it.
-      const isModel = (token: Token | undefined) => token !== undefined && models.has(token.text.toLowerCase());
-      let count = 3;
-      if (!isModel(args[3]) && (isModel(args[4]) || (args[4] && !isNumeric(args[4].text) && !args[4].text.includes('=')))) count = 4;
-      const [c, b, e, substrate] = nodes(count);
-      needValue(count, 'a model name');
-      const model = args[count]!.text;
-      const modelType = models.get(model.toLowerCase());
-      if (modelType === undefined) notes.push(`${at}: model ${model} of ${ref} is not defined here; drawn as NPN.`);
-      if (substrate !== undefined) notes.push(`${at}: the substrate connection of ${ref} is not drawn.`);
-      return {
-        ref,
-        type: type(modelType === undefined ? {} : { modelType }),
-        kind: modelType === 'pnp' ? 'pnp' : 'npn',
-        pins: [{ name: 'C', node: c! }, { name: 'B', node: b! }, { name: 'E', node: e! }],
-        value: rest(count),
-        line,
-        ...origin
-      };
-    }
-    case 'M': {
-      const [d, g, s, b] = nodes(4);
-      needValue(4, 'a model name');
-      const model = args[4]!.text;
-      const modelType = models.get(model.toLowerCase());
-      if (modelType === undefined) notes.push(`${at}: model ${model} of ${ref} is not defined here; drawn as NMOS.`);
-      return {
-        ref,
-        type: type(modelType === undefined ? {} : { modelType }),
-        kind: modelType === 'pmos' ? 'pmos' : 'nmos',
-        pins: [{ name: 'D', node: d! }, { name: 'G', node: g! }, { name: 'S', node: s! }, { name: 'B', node: b! }],
-        value: rest(4),
-        line,
-        ...origin
-      };
-    }
-    case 'X': {
-      // X n1 n2 … name [params: …] [k=v …]: the subcircuit name is the last positional token.
-      let positional = args.findIndex((token) => /^params:$/i.test(token.text) || token.text.includes('='));
-      if (positional === -1) positional = args.length;
-      if (positional < 1) throw new ParseError(`${ref} needs a subcircuit name.`, end(card));
-      const name = args[positional - 1]!.text;
-      const ports = subcircuits.get(name.toLowerCase());
-      const count = positional - 1;
-      if (ports && ports.length !== count) {
-        throw new ParseError(`${ref} connects ${count} nodes, but subcircuit ${name} has ${ports.length} ports.`, args[positional - 1]!);
-      }
-      if (!ports) notes.push(`${at}: subcircuit ${name} of ${ref} is not defined here; its pins are numbered.`);
-      const pins = args.slice(0, count).map((token, index) => ({ name: ports?.[index] ?? String(index + 1), node: normalise(token.text) }));
-      return { ref, type: type(), kind: 'block', pins, value: rest(positional), title: name, line, ...origin };
-    }
-    case 'K':
-      notes.push(`${at}: coupling ${ref} (${rest(0)}) is not drawn.`);
-      return undefined;
-    default: {
-      const block = BLOCKS[letter];
-      if (!block) {
-        throw new ParseError(`Element type ${letter} (${ref}) is not supported.${titleHint(card)}`, head);
-      }
-      const found = nodes(block.nodes);
-      const names = BLOCK_PINS[letter]!;
-      return {
-        ref,
-        type: type(),
-        kind: 'block',
-        pins: found.map((node, index) => ({ name: names[index]!, node })),
-        value: rest(block.nodes),
-        title: block.title,
-        line,
-        ...origin
-      };
-    }
-  }
+/** A terminal of a form with its repeat index applied: `nc#+` → `nc1+`. */
+interface Slot {
+  name: string;
+  optional: boolean;
 }
 
-/** Just past a card's last token, where a missing one would go. */
-function end(card: Card): Position {
-  const last = card.tokens.at(-1)!;
-  return { ...last, column: last.column + last.text.length + 1 };
+/** The leading tokens that may be nodes: words and keywords, up to the first pair, group or `params:`. */
+function positionalTokens(tokens: ParsedToken[]): ParsedToken[] {
+  const found: ParsedToken[] = [];
+  for (const token of tokens) {
+    if ((token.class !== 'word' && token.class !== 'keyword') || /^params:$/i.test(token.text)) break;
+    found.push(token);
+  }
+  return found;
 }
 
-/** Every spelling of ground becomes `0`; other node names are case-insensitive, as in SPICE. */
-function normalise(node: string): string {
-  const lower = node.toLowerCase();
-  return lower === 'gnd' || lower === '0' ? GROUND : lower;
+/** A keyword token's name without its arguments, upper-cased: `POLY(2)` → `POLY`. */
+function keywordName(token: ParsedToken): string {
+  return token.text.replace(/\(.*$/, '').toUpperCase();
+}
+
+/** The numbers in a keyword's parentheses: `NANDA(2,4)` → `[2, 4]`. */
+function keywordArguments(token: ParsedToken): number[] {
+  const inner = /\((.*)\)/.exec(token.text)?.[1] ?? '';
+  return inner.split(',').map((text) => Number.parseInt(text.trim(), 10)).filter((n) => !Number.isNaN(n));
 }
 
 function isNumeric(text: string): boolean {
   return /^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?[a-z]*$/i.test(text);
 }
 
+function toPart(card: Card, context: Context): Part | undefined {
+  const { dialect, models, notes } = context;
+  const parsed = card.parsed;
+  if (parsed.kind !== 'element' || parsed.letter === undefined) {
+    throw new ParseError(`"${parsed.kind === 'element' ? parsed.ref : parsed.name}" is not an element name. Element names start with a letter, e.g. R1.${titleHint(head(card))}`, head(card));
+  }
+  const { ref, letter, tokens } = parsed;
+  const line = parsed.line;
+  const origin = card.file ? { file: card.file } : {};
+  const note = (text: string): void => { notes.push(`${capitalise(where(card))}: ${text}`); };
+  const hint = titleHint(head(card));
+  const positional = positionalTokens(tokens);
+  const keywords = tokens.filter((token) => token.class === 'keyword');
+  const pairs = tokens.filter((token) => token.class === 'pair');
+
+  // What the line and its model say, for choosing the element type and its form.
+  const named = positional.findIndex((token, index) => index > 0 && models.has(token.text.toLowerCase()));
+  const model = named === -1 ? undefined : models.get(positional[named]!.text.toLowerCase())!;
+  const hints: SpellingHints = {
+    ...(model ? { modelType: model.type } : {}),
+    ...(model?.level !== undefined ? { modelLevel: model.level } : {}),
+    ...(parsed.selector !== undefined ? { suffix: parsed.selector.toUpperCase() } : {}),
+    keywords: keywords.map(keywordName),
+    pairKeys: pairs.map((token) => token.key!.toUpperCase())
+  };
+  const typeId = elementTypeForLetter(dialect as Exclude<DialectId, 'spectre'>, letter, hints);
+  if (typeId === undefined) {
+    throw new ParseError(`Element type ${letter} (${ref}) is not supported.${hint}`, head(card));
+  }
+  const type = CATALOGUE[typeId];
+  const { form, matched } = chooseForm(type, dialect, keywords, pairs);
+  // The keyword that chose the form sits between the nodes; it is not one of them.
+  const candidates = positional.filter((token) => token !== matched);
+  const required = requiredCount(form.terminals);
+  const needs = (n: number): never => {
+    const first = tokens.find((token) => !candidates.includes(token));
+    throw new ParseError(`${ref} needs ${n} nodes; found ${candidates.length}.${hint}`, first ? at(card, first) : end(card));
+  };
+
+  // Where the nodes end: the form's rule, unless the parser unwrapped a parenthesised node list.
+  let count: number;
+  let nameToken: ParsedToken | undefined;
+  if (parsed.nodesClosed) {
+    count = closedNodeCount(card);
+    if (form.nodesEnd === 'last-positional') nameToken = tokens[count];
+    if (form.nodesEnd === 'last-positional' && nameToken === undefined) {
+      throw new ParseError(`${ref} needs a ${type.tail === 'model' ? 'model' : 'subcircuit'} name.${hint}`, end(card));
+    }
+  } else {
+    switch (form.nodesEnd) {
+      case 'count': {
+        count = Math.min(candidates.length, expandTerminals(form, keywords, pairs, undefined).length);
+        if (count < required) needs(required);
+        break;
+      }
+      case 'model': {
+        const most = expandTerminals(form, keywords, pairs, undefined).length;
+        const modelAt = candidates.findIndex((token, index) => index >= required && models.has(token.text.toLowerCase()));
+        if (modelAt !== -1) {
+          // ngspice ends the nodes at the first token naming a defined model.
+          count = modelAt;
+          if (count > most) {
+            throw new ParseError(`${ref} connects ${count} nodes before its model, but a ${type.name} has at most ${most}.${hint}`, at(card, candidates[most]!));
+          }
+        } else if (candidates.length <= required) {
+          count = candidates.length;
+          if (count < required) needs(required);
+        } else {
+          // No defined model says where the nodes end: the last positional token is the model,
+          // unless it is a number — an area — after the model.
+          let last = candidates.length - 1;
+          if (last > required && isNumeric(candidates[last]!.text)) last--;
+          count = Math.min(Math.max(last, required), most);
+        }
+        break;
+      }
+      case 'last-positional':
+        if (candidates.length < 1) {
+          throw new ParseError(`${ref} needs a ${type.tail === 'model' ? 'model' : 'subcircuit'} name.${hint}`, end(card));
+        }
+        count = candidates.length - 1;
+        nameToken = candidates[count];
+        break;
+      case 'all-positional':
+        count = candidates.length;
+        break;
+    }
+  }
+  const nodeTokens = candidates.slice(0, count);
+  const solves = form.counts !== undefined && Object.values(form.counts).includes('solve');
+  const solved = solves ? solveCount(form, count) : undefined;
+  if (solves && solved === undefined) {
+    throw new ParseError(`${ref} connects ${count} nodes, which is not a whole number of ${type.name} ports.${hint}`, head(card));
+  }
+  const slots = expandTerminals(form, keywords, pairs, solved);
+
+  // The tail: what follows the nodes, kept as the value string; a block titled by its master
+  // (a subcircuit name) leaves that out of the value, as today.
+  const next = tokens.find((token) => !nodeTokens.includes(token) && token !== matched);
+  if (type.tail === 'model' && nameToken === undefined && next?.class !== 'word') {
+    throw new ParseError(`${ref} needs a model name after its nodes.${hint}`, end(card));
+  }
+  if (type.tail === 'value' && VALUE_REQUIRED.has(typeId) && next === undefined) {
+    throw new ParseError(`${ref} needs a value after its nodes.${hint}`, end(card));
+  }
+  const modelName = type.tail === 'model' ? (nameToken ?? next)!.text : undefined;
+  const titledByMaster = type.draw !== 'none' && 'block' in type.draw && type.draw.block.title === 'master';
+  const value = tokens.filter((token) => !nodeTokens.includes(token) && !(titledByMaster && token === nameToken)).map((token) => token.text).join(' ');
+
+  if (type.draw === 'none') {
+    note(`${type.name} ${ref} (${value}) is not drawn.`);
+    return undefined;
+  }
+
+  const pins = toPins(card, nodeTokens, slots, 'block' in type.draw ? type.draw.block.pins : undefined, nameToken, context, ref);
+
+  if ('symbol' in type.draw) {
+    const { symbol } = type.draw;
+    let kind: string;
+    if (typeof symbol === 'string') {
+      kind = symbol;
+    } else if (model === undefined) {
+      kind = symbol.default;
+      note(`model ${modelName} of ${ref} is not defined here; ${symbol.note}.`);
+    } else {
+      kind = symbol.byModelType?.[model.type]
+        ?? model.flags.map((flag) => symbol.byModelFlag?.[flag]).find((found) => found !== undefined)
+        ?? symbol.default;
+    }
+    // Optional terminals beyond what the symbol draws are read, so the pin count is right, and noted.
+    slots.forEach((slot, index) => {
+      if (index < count && slot.optional && slot.name !== 'B') note(`the ${UNDRAWN_TERMINALS[slot.name] ?? slot.name} connection of ${ref} is not drawn.`);
+    });
+    // The three-pin MOSFET symbols are the four-pin kinds drawn without a body.
+    return { ref, type: typeId, kind: kind.replace(/3$/, '') as Kind, pins, value, line, ...origin };
+  }
+
+  const { block } = type.draw;
+  let title: string;
+  switch (block.title) {
+    case 'model-type':
+      title = model?.type ?? modelName!;
+      if (model === undefined) note(`model ${modelName} of ${ref} is not defined here; its type is unknown.`);
+      break;
+    case 'master':
+      title = nameToken!.text;
+      break;
+    case 'suffix':
+      title = parsed.selector ?? letter;
+      break;
+    case 'keyword':
+      title = matched ? keywordName(matched) : letter;
+      break;
+    case 'keyword-with-arguments':
+      title = matched ? matched.text : letter;
+      break;
+    default:
+      title = block.title.fixed;
+  }
+  if (block.polarity && model) {
+    const polarity = block.polarity.byModelType[model.type];
+    if (polarity !== undefined) title = `${title} (${polarity})`;
+  }
+  return { ref, type: typeId, kind: 'block', pins, value, title, line, ...origin };
+}
+
 /**
- * A SPICE file's first line is its title, which in a fence usually fails to parse as an element.
- * Say so where it would help.
+ * The form a line takes — one selected by a keyword or a pair on the line, else the type's default
+ * (a default written for this dialect wins over the general one) — and the keyword that chose it.
  */
-function titleHint(card: Card): string {
-  return card.line === 1 && card.file === '' ? ' If this line is a title, start it with * to make it a comment.' : '';
+function chooseForm(type: ElementType, dialect: DialectId, keywords: ParsedToken[], pairs: ParsedToken[]): { form: Form; matched?: ParsedToken } {
+  const applicable = type.forms.filter((form) => form.dialects === undefined || form.dialects.includes(dialect));
+  for (const form of applicable) {
+    if (!form.match) continue;
+    if ('keyword' in form.match) {
+      const { keyword } = form.match;
+      const matched = keywords.find((token) => keyword.includes(keywordName(token)));
+      if (matched) return { form, matched };
+    } else {
+      const { pair, values } = form.match;
+      if (pairs.some((token) => pair.includes(token.key!.toUpperCase()) && (values === undefined || values.includes(token.value!.toUpperCase())))) return { form };
+    }
+  }
+  const form = applicable.find((candidate) => candidate.match === undefined && candidate.dialects !== undefined)
+    ?? applicable.find((candidate) => candidate.match === undefined)
+    ?? type.forms[0]!;
+  return { form };
+}
+
+function requiredCount(terminals: Terminals): number {
+  let count = 0;
+  for (const entry of terminals) {
+    if (!('repeat' in entry)) count += entry.optional ? 0 : 1;
+  }
+  return count;
+}
+
+/** Every terminal of a form in order, repeat groups unrolled with their counts, `#` replaced by the index. */
+function expandTerminals(form: Form, keywords: ParsedToken[], pairs: ParsedToken[], solved: number | undefined): Slot[] {
+  const count = (name: string): number => {
+    if (/^\d+$/.test(name)) return Number.parseInt(name, 10);
+    const source: CountSource | undefined = form.counts?.[name];
+    if (source === undefined) return 0;
+    if (source === 'solve') return solved ?? 0;
+    if ('argument' in source) {
+      const keyword = keywords.find((token) => form.match !== undefined && 'keyword' in form.match && form.match.keyword.includes(keywordName(token)));
+      return (keyword && keywordArguments(keyword)[source.argument]) ?? source.default ?? 0;
+    }
+    const pair = pairs.find((token) => token.key!.toUpperCase() === source.pair.toUpperCase());
+    const value = pair ? Number.parseInt(pair.value!, 10) : Number.NaN;
+    return Number.isNaN(value) ? 0 : value;
+  };
+  const slots: Slot[] = [];
+  for (const entry of form.terminals) {
+    if (!('repeat' in entry)) {
+      slots.push({ name: entry.name, optional: entry.optional === true });
+      continue;
+    }
+    const times = entry.repeat.split('*').reduce((product, name) => product * count(name), 1);
+    for (let index = 1; index <= times; index++) {
+      for (const terminal of entry.terminals as readonly Terminal[]) {
+        slots.push({ name: terminal.name.replace('#', String(index)), optional: terminal.optional === true });
+      }
+    }
+  }
+  return slots;
+}
+
+/** The repeat count a form leaves to be solved from how many nodes the line has, or `undefined` when none fits. */
+function solveCount(form: Form, nodes: number): number | undefined {
+  let fixed = 0;
+  let perRepeat = 0;
+  for (const entry of form.terminals) {
+    if (!('repeat' in entry)) fixed++;
+    else perRepeat += entry.terminals.length * entry.repeat.split('*').filter((name) => /^\d+$/.test(name)).reduce((product, name) => product * Number.parseInt(name, 10), 1);
+  }
+  if (perRepeat === 0) return 0;
+  const remaining = nodes - fixed;
+  if (remaining < 0 || remaining % perRepeat !== 0) return undefined;
+  return remaining / perRepeat;
+}
+
+/**
+ * How many tokens the parser unwrapped from a parenthesised node list. The cards do not say where
+ * it closed, so the closing bracket is found in the line: the list opens after the name and closes
+ * on the same line (ADR 0008).
+ */
+function closedNodeCount(card: Card): number {
+  const { parsed, lines } = card;
+  const line = lines[parsed.line - 1] ?? '';
+  const open = line.indexOf('(', parsed.end);
+  const close = line.indexOf(')', open);
+  return parsed.tokens.filter((token) => token.line === parsed.line && token.column < close).length;
+}
+
+/** Every spelling of ground becomes `0`; other node names are case-insensitive unless the dialect says otherwise. */
+function normalise(node: string, dialect: DialectId): string {
+  const rules = DIALECTS[dialect];
+  const lower = node.toLowerCase();
+  if (rules.ground.some((spelling) => (rules.caseSensitive ? spelling === node : spelling.toLowerCase() === lower))) return GROUND;
+  return rules.caseSensitive ? node : lower;
+}
+
+/** Name each node token's pin: from the form's terminals, or by the block's pin rule. */
+function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinRule | undefined, nameToken: ParsedToken | undefined, context: Context, ref: string): Pin[] {
+  const { dialect, subcircuits, notes } = context;
+  const nodes = nodeTokens.map((token) => normalise(token.text, dialect));
+  switch (rule) {
+    case 'numbered':
+      return nodes.map((node, index) => ({ name: String(index + 1), node }));
+    case 'subcircuit-ports': {
+      const name = nameToken!.text;
+      const ports = subcircuits.get(name.toLowerCase());
+      if (ports && ports.length !== nodes.length) {
+        throw new ParseError(`${ref} connects ${nodes.length} nodes, but subcircuit ${name} has ${ports.length} ports.`, at(card, nameToken!));
+      }
+      if (!ports) notes.push(`${capitalise(where(card))}: subcircuit ${name} of ${ref} is not defined here; its pins are numbered.`);
+      return nodes.map((node, index) => ({ name: ports?.[index] ?? String(index + 1), node }));
+    }
+    case 'xspice-ports':
+      return xspicePins(nodeTokens, dialect);
+    case 'hide-tied-to-common':
+    case undefined:
+      return nodes.map((node, index) => ({ name: slots[index]?.name ?? String(index + 1), node }));
+  }
+}
+
+/**
+ * XSPICE ports (ngspice M §8.1.1): a port is a node, `%type` then a node, `%vd(a b)` or
+ * `%vd a b` for a differential pair, `[a b]` for a vector (a modifier before `[` applies to all of
+ * it), `~a` for an inverted digital node, `null` for no connection. Pins are numbered by port:
+ * `2[0]`, `2[1]` for a vector's members, `2+`, `2-` for a differential pair; an inverted node
+ * keeps its `~` on the pin. `%vnam` names a voltage source, not a node, and is not drawn.
+ */
+function xspicePins(tokens: ParsedToken[], dialect: DialectId): Pin[] {
+  const pins: Pin[] = [];
+  let port = 0;
+  let modifier = '';
+  let vector: { port: number; index: number } | undefined;
+  const differential = (text: string): boolean => /^%[vigh]d$/i.test(text);
+  const push = (name: string, raw: string): void => {
+    const inverted = raw.startsWith('~');
+    const node = inverted ? raw.slice(1) : raw;
+    if (node.toLowerCase() === 'null' || modifier.toLowerCase() === '%vnam') return;
+    pins.push({ name: inverted ? `~${name}` : name, node: normalise(node, dialect) });
+  };
+  for (const token of tokens) {
+    let text = token.text;
+    // `%vd(in 0)` or `%d(dout)`: a modifier glued to its node or pair.
+    const glued = /^(%\w+)\((.*)\)$/.exec(text);
+    if (glued) {
+      port++;
+      modifier = glued[1]!;
+      const [a, b] = glued[2]!.split(/[\s,]+/).filter((node) => node.length > 0);
+      if (differential(modifier)) {
+        if (a !== undefined) push(`${port}+`, a);
+        if (b !== undefined) push(`${port}-`, b);
+      } else if (a !== undefined) {
+        push(String(port), a);
+      }
+      modifier = '';
+      continue;
+    }
+    if (/^%\w+$/.test(text)) {
+      modifier = text;
+      continue;
+    }
+    if (/^%\w+\[/.test(text)) {
+      modifier = text.slice(0, text.indexOf('['));
+      text = text.slice(text.indexOf('['));
+    }
+    if (text.startsWith('[')) {
+      vector = { port: ++port, index: 0 };
+      text = text.slice(1);
+      if (text.length === 0) continue;
+    }
+    let closes = false;
+    if (text.endsWith(']')) {
+      closes = true;
+      text = text.slice(0, -1);
+    }
+    if (vector) {
+      if (text.length > 0) push(`${vector.port}[${vector.index++}]`, text);
+      if (closes) {
+        vector = undefined;
+        modifier = '';
+      }
+      continue;
+    }
+    if (differential(modifier)) {
+      // `%vd a b`: the pair's two nodes come as separate words.
+      const pending = pins.at(-1);
+      if (pending && pending.name === `${port}+` && !pins.some((pin) => pin.name === `${port}-`)) {
+        push(`${port}-`, text);
+        modifier = '';
+      } else {
+        push(`${++port}+`, text);
+      }
+      continue;
+    }
+    push(String(++port), text);
+    modifier = '';
+  }
+  return pins;
 }

@@ -1,6 +1,9 @@
-import { test } from 'node:test';
+import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseNetlist, MAX_PARTS, type Netlist, type Part } from '../src/netlist';
+import { loadNgspice } from './helpers/ngspice';
+
+before(loadNgspice);
 
 function parts(source: string): Part[] {
   return netlist(source).parts;
@@ -144,13 +147,16 @@ test('analysis directives, .control blocks and .end are skipped; nothing after .
     'this is not a netlist'
   ].join('\n'));
   assert.deepEqual(found.map((part) => part.ref), ['R1']);
-  assert.deepEqual(notes, ['Line 7: .include models.lib is not read: no files are available here.']);
+  assert.deepEqual(notes, [
+    'Line 8: 1 line after .end is not read.',
+    'Line 7: .include models.lib is not read: no files are available here.'
+  ]);
 });
 
 test('coupling is noted, not drawn', () => {
   const { parts: found, notes } = netlist('L1 a 0 1m\nL2 b 0 1m\nK1 L1 L2 0.99');
   assert.equal(found.length, 2);
-  assert.deepEqual(notes, ['Line 3: coupling K1 (L1 L2 0.99) is not drawn.']);
+  assert.deepEqual(notes, ['Line 3: mutual inductance K1 (L1 L2 0.99) is not drawn.']);
 });
 
 test('W = 1u with spaces is one parameter, as ngspice reads it', () => {
@@ -166,8 +172,8 @@ test('a title line gets a hint, and errors name the line and column', () => {
   assert.deepEqual([missing.line, missing.column], [2, 5]);
 });
 
-test('unsupported element letters, bad names, duplicates and stray continuations are errors', () => {
-  assert.equal(error('R1 a b 1\nU1 a b c').message, 'Element type U (U1) is not supported.');
+test('bad names, duplicates and stray continuations are errors', () => {
+  // Every letter is an element in ngspice; "not supported" is for the dialects that lack one.
   assert.match(error('1R a b 1k').message, /is not an element name/);
   const duplicate = error('R1 a b 1\nr1 c d 2');
   assert.equal(duplicate.message, 'Duplicate element r1; it is also defined on line 1.');

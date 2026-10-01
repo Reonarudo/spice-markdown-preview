@@ -4,12 +4,21 @@ type MarkdownIt = InstanceType<typeof MarkdownItConstructor>;
 import { window, workspace } from 'vscode';
 import { createPreview } from './preview';
 import { IncludeFiles } from './include-files';
+import { parserLoader } from './parser/modules';
 
 export async function activate(context: ExtensionContext): Promise<{ extendMarkdownIt(md: MarkdownIt): MarkdownIt }> {
   // Unrecognised fence attributes and the netlist reader's notes never surface in the preview
   // (ADR 0002); they are reported here so an author who suspects a typo has somewhere to look.
   const channel = window.createOutputChannel('SPICE Schematic Preview');
   context.subscriptions.push(channel);
+  // The host finds a fence's includes by reading it with the dialect's parser (ADR 0008), so the
+  // default dialect's module is loaded here, beside the worker's own copy. A module that will not
+  // load is reported once; the worker reports the same failure on every fence.
+  try {
+    await parserLoader(context.asAbsolutePath('vendor/parsers'))('ngspice');
+  } catch (error) {
+    channel.appendLine(error instanceof Error ? error.message : String(error));
+  }
   const files = new IncludeFiles();
   context.subscriptions.push(files);
   const preview = await createPreview(context.asAbsolutePath('dist'), (line) => channel.appendLine(line), {
