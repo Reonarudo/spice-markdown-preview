@@ -14,24 +14,25 @@ const GC_OPTIONAL: Terminal = { ...GC, optional: true };
 
 /**
  * HSPICE's IBIS I/O buffer `B node … file='f.ibs' model='m' [buffer=n]`: the nodes end at the
- * first pair, and their names are known only when `buffer=` names the type (SI Table 20). The
- * supply pins `nd_pu nd_pd nd_pc nd_gc` sit on the top and bottom edges (#1197).
+ * first pair, and their names are known only when `buffer=` names the type (SI Table 20) — else
+ * the empty form numbers them. The supply pins `nd_pu nd_pd nd_pc nd_gc` sit on the top and bottom
+ * edges (#1197).
  */
 export default {
   name: 'IBIS buffer',
   spellings: [{ dialect: 'hspice', letter: 'B' }],
   forms: [
     { terminals: [], nodesEnd: 'all-positional' },
-    { match: { pair: ['buffer'], values: ['1', '11'] }, terminals: [PC, GC, IN, OUT_OF_IN], nodesEnd: 'all-positional' },
-    { match: { pair: ['buffer'], values: ['2', '5', '7', '9'] }, terminals: [PU, PD, OUT, IN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
-    { match: { pair: ['buffer'], values: ['3', '6', '8', '10'] }, terminals: [PU, PD, OUT, IN, EN, OUT_OF_IN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
-    { match: { pair: ['buffer'], values: ['4'] }, terminals: [PU, PD, OUT, IN, EN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
-    { match: { pair: ['buffer'], values: ['12'] }, terminals: [PU, OUT, IN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
-    { match: { pair: ['buffer'], values: ['13'] }, terminals: [PU, OUT, IN, EN, OUT_OF_IN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
-    { match: { pair: ['buffer'], values: ['14'] }, terminals: [PU, OUT, IN, EN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
-    { match: { pair: ['buffer'], values: ['15', '16'] }, terminals: [IN, OUT], nodesEnd: 'all-positional' },
-    { match: { pair: ['buffer'], values: ['17'] }, terminals: [PC, GC, OUT], nodesEnd: 'all-positional' }
+    { match: { pair: ['BUFFER'], values: ['1', '11'] }, terminals: [PC, GC, IN, OUT_OF_IN], nodesEnd: 'all-positional' },
+    { match: { pair: ['BUFFER'], values: ['2', '5', '7', '9'] }, terminals: [PU, PD, OUT, IN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
+    { match: { pair: ['BUFFER'], values: ['3', '6', '8', '10'] }, terminals: [PU, PD, OUT, IN, EN, OUT_OF_IN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
+    { match: { pair: ['BUFFER'], values: ['4'] }, terminals: [PU, PD, OUT, IN, EN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
+    { match: { pair: ['BUFFER'], values: ['12'] }, terminals: [PU, OUT, IN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
+    { match: { pair: ['BUFFER'], values: ['13'] }, terminals: [PU, OUT, IN, EN, OUT_OF_IN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
+    { match: { pair: ['BUFFER'], values: ['14'] }, terminals: [PU, OUT, IN, EN, PC_OPTIONAL, GC_OPTIONAL], nodesEnd: 'all-positional' },
+    { match: { pair: ['BUFFER'], values: ['15', '16'] }, terminals: [IN, OUT], nodesEnd: 'all-positional' },
+    { match: { pair: ['BUFFER'], values: ['17'] }, terminals: [PC, GC, OUT], nodesEnd: 'all-positional' }
   ],
   tail: 'none',
-  draw: { block: { title: { fixed: 'IBIS buffer' }, pins: 'numbered' } }
+  draw: { block: { title: { fixed: 'IBIS buffer' } } }
 } satisfies ElementType;

@@ -267,6 +267,24 @@ elements, has no sections, and a `.LIB` whose file is not next to the document
 (or a bare `.LIB`, meaning `nom.lib`) is noted and skipped; `.ALIASES` blocks
 are skipped. Only the first circuit of a file is drawn.
 
+In `hspice`, netlists are read as HSPICE B-2008.09 reads them: `*` lines and `$`
+comment — `$` after a blank, a comma or a number, so `1k$note` is `1k` — while
+`;` is an ordinary name character and `//` is text; a blank then `\` or `\\` at
+the end of a line continues it; `'…'` and `"…"` expressions keep their spaces;
+`0`, `GND`, `GND!`, `GROUND` and `!GND` are ground; `B` is an IBIS buffer whose
+pins are named by `buffer=`, `S` an n-port with numbered pins, `W` a coupled
+lossy line with `N=` conductors (nodes and parameters may be mixed), `U` a lumped
+lossy line and `P` a port; `E`/`G` keep four nodes in their `LAPLACE`, `DELAY`,
+`POLE`, `FREQ`, `FOSTER`, `OPAMP`, `TRANSFORMER`, `PWL`, `VCR` and `VCCAP` forms,
+with a bare `POLY` meaning `POLY(1)`, and two in `VOL=`, `CUR=` and `NOISE=`; `M`
+may leave off its bulk and `J` may add one; `R`/`C`/`L` name a model before the
+value; a model `nch` is found among `nch.1`, `nch.2`, … (the model selector);
+`.MACRO`/`.EOM` define a subcircuit; `.CONNECT` joins two nodes; `.LIB 'file'
+entry` reads a section, sections of one file may call each other, and `.LIB file`
+alone is an error; `.DATA` blocks and `.PROTECT` text are skipped, and the first
+`.ALTER` ends the circuit, both with a note. Only the first simulation of a file
+is drawn.
+
 ![An op-amp drawn as a labelled block in an inverting amplifier, and a netlist error pointing at its column](media/screenshots/caption-and-error.jpg)
 
 ## Errors and limits

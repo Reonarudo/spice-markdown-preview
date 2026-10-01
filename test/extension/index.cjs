@@ -83,6 +83,8 @@ async function dialects(render) {
   assert.match(await render(fence('spice {dialect="ngspice"}', 'R1 $G_VDD out 1k\nR2 out 0 1k')), /spice-error.*R1 needs 2 nodes; found 0/s, 'in ngspice the $ starts a comment');
   // PSpice likewise keeps `$G_DPWR`, and reads a two-input NAND primitive with its supply pins.
   await settled(render, fence('spice {dialect="pspice"}', 'U1 NAND(2) $G_DPWR $G_DGND a b y D_00 IO_STD\nR1 a y 1k\nR2 b 0 1k'), /<svg class="spice"/);
+  // HSPICE: `GND!` is ground, a `$` after a number ends the value, and a three-node MOSFET draws.
+  await settled(render, fence('spice {dialect="hspice"}', 'M1 out in GND! nch W=1u L=1u$no bulk\nR1 out vdd! 1k\nV1 vdd! 0 1.8\n.MODEL nch.1 NMOS'), /<svg class="spice"/);
   // A dialect whose parser is not vendored yet proves the name travels: the worker reports it.
   // The host loads a dialect's parser at its first fence, so the first render may still be loading.
   const vendored = await fs.readdir(path.join(vscode.extensions.getExtension('ReoX86.spice-schematic-preview').extensionPath, 'vendor', 'parsers'));

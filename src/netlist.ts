@@ -114,8 +114,8 @@ const TITLE_HINT = ' If this line is a title, start it with * to make it a comme
 
 /**
  * Dialects in which a one-argument `.lib file` reads the whole file. ngspice reads a library only
- * by section (`.lib file section`); LTspice and PSpice read the file (confirmed by their overlay
- * tickets); the remaining overlay tickets settle HSPICE and Xyce.
+ * by section (`.lib file section`), and so does HSPICE (CR p.137); LTspice and PSpice read the
+ * file (confirmed by their overlay tickets); the Xyce overlay ticket settles Xyce.
  */
 const WHOLE_FILE_LIB: ReadonlySet<DialectId> = new Set(['ltspice', 'pspice']);
 
@@ -138,6 +138,19 @@ const LIBRARY_LIB: Readonly<Partial<Record<DialectId, { folder: string; dropped:
  * `nom.lib`, which lives in the simulator's library path.
  */
 const SECTIONLESS_LIB: ReadonlySet<DialectId> = new Set(['pspice']);
+
+/**
+ * Dialects whose grammar swallows everything from the first `.alter` to `.end` (HSPICE CR p.28: a
+ * re-run that redefines elements by name) and the encrypted lines between `.protect` and
+ * `.unprotect` (CR p.227): the reader only notes what was left out.
+ */
+const ALTER_AND_PROTECT: ReadonlySet<DialectId> = new Set(['hspice']);
+
+/**
+ * Dialects with HSPICE's automatic model selector (Star-Hspice 15-8): an element's model `nch`
+ * picks among `.model nch.1 …`, `.model nch.2 …` by its geometry, and any of them says the type.
+ */
+const MODEL_SELECTOR: ReadonlySet<DialectId> = new Set(['hspice']);
 
 /** Types whose value may not be left off; a source without one is simply a 0 V or 0 A source. */
 const VALUE_REQUIRED: ReadonlySet<ElementTypeId> = new Set(['resistor', 'capacitor', 'inductor']);
@@ -376,7 +389,10 @@ function include(card: Card, target: { path: ParsedToken; section?: ParsedToken 
     notes.push(`${capitalise(where(card))}: ${directive(card)} ${path.text} is not read: ${includes.unavailable}.`);
     return [];
   }
-  if (stack.includes(key)) throw new ParseError(`${shown} includes itself.`, here(path));
+  // A library section may call other sections of its own file (HSPICE UG p.67), so the cycle
+  // check is keyed on the file and the section, not the file alone.
+  const visit = section ? `${key}#${section.text.toLowerCase()}` : key;
+  if (stack.includes(visit)) throw new ParseError(`${shown} includes itself.`, here(path));
   if (stack.length >= MAX_INCLUDE_DEPTH) throw new ParseError(`Includes are nested more than ${MAX_INCLUDE_DEPTH} deep.`, here(path));
   const entry = includes.files[key];
   if (entry === undefined) {
@@ -399,7 +415,7 @@ function include(card: Card, target: { path: ParsedToken; section?: ParsedToken 
     const stop = cards.findIndex((c, i) => i > start && directive(c) === '.endl');
     cards = cards.slice(start + 1, stop === -1 ? undefined : stop);
   }
-  const expanded = expand(cards, key, includes, notes, [...stack, key], dialect);
+  const expanded = expand(cards, key, includes, notes, [...stack, visit], dialect);
   if (!library) return expanded;
   // A library's elements at its top level are not part of the circuit; its models and subcircuits are.
   const kept: Card[] = [];
@@ -425,7 +441,31 @@ interface Context {
   dialect: DialectId;
   models: Map<string, Model>;
   subcircuits: Map<string, Ports>;
+  /** HSPICE `.connect node1 node2`: the normalised second node is drawn as the first. */
+  connected: Map<string, string>;
   notes: string[];
+}
+
+/** The model an element names, by its exact name or, where the dialect has one, through the model selector. */
+function findModel(context: Context, name: string): Model | undefined {
+  const key = name.toLowerCase();
+  const exact = context.models.get(key);
+  if (exact !== undefined || !MODEL_SELECTOR.has(context.dialect)) return exact;
+  for (const [candidate, model] of context.models) {
+    if (candidate.startsWith(`${key}.`) && /^\d+$/.test(candidate.slice(key.length + 1))) return model;
+  }
+  return undefined;
+}
+
+/** The net a node belongs to after every `.connect` is applied. */
+function joined(node: string, context: Context): string {
+  let found = node;
+  for (let hops = 0; hops < context.connected.size; hops++) {
+    const next = context.connected.get(found);
+    if (next === undefined) break;
+    found = next;
+  }
+  return found;
 }
 
 function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist {
@@ -433,7 +473,7 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
   const top = toCards(source, '', undefined, dialect, notes);
   if (top.error) throw top.error;
   const cards = expand(top.cards, '', includes, notes, [], dialect);
-  const context: Context = { dialect, models: new Map(), subcircuits: new Map(), notes };
+  const context: Context = { dialect, models: new Map(), subcircuits: new Map(), connected: new Map(), notes };
   const elements: Card[] = [];
 
   // First pass: directives, so that a model or subcircuit defined below its use still counts.
@@ -470,6 +510,20 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
     }
     if (conditionals.some((open) => open.skipping)) continue;
     if (word === '.end') break;
+    if (ALTER_AND_PROTECT.has(dialect) && word === '.alter') {
+      notes.push(`${capitalise(where(card))}: .alter and everything after it are not read; they change the circuit for a second run.`);
+      break;
+    }
+    if (ALTER_AND_PROTECT.has(dialect) && (word === '.protect' || word === '.prot')) {
+      notes.push(`${capitalise(where(card))}: the lines between ${word} and ${word === '.prot' ? '.unprot' : '.unprotect'} are not read.`);
+      continue;
+    }
+    if (word === '.connect' && dialect === 'hspice') {
+      // `.connect node1 node2` merges the two nodes under the first name (CR p.51).
+      const [first, second] = card.parsed.tokens;
+      if (first && second) context.connected.set(normalise(second.text, dialect), normalise(first.text, dialect));
+      continue;
+    }
     if (word === '.subckt' || word === '.macro') {
       const [name, ...rest] = card.parsed.tokens;
       if (!name) throw new ParseError(`${word} needs a name.`, head(card));
@@ -631,13 +685,12 @@ function toPart(card: Card, context: Context): Part | undefined {
   const origin = card.file ? { file: card.file } : {};
   const note = (text: string): void => { notes.push(`${capitalise(where(card))}: ${text}`); };
   const hint = titleHint(head(card));
-  const positional = positionalTokens(tokens);
+  const leading = positionalTokens(tokens);
   const keywords = tokens.filter((token) => token.class === 'keyword');
   const pairs = tokens.filter((token) => token.class === 'pair');
 
   // What the line and its model say, for choosing the element type and its form.
-  const named = positional.findIndex((token, index) => index > 0 && models.has(token.text.toLowerCase()));
-  const model = named === -1 ? undefined : models.get(positional[named]!.text.toLowerCase())!;
+  const model = leading.slice(1).map((token) => findModel(context, token.text)).find((found) => found !== undefined);
   const hints: SpellingHints = {
     ...(model ? { modelType: model.type } : {}),
     ...(model?.level !== undefined ? { modelLevel: model.level } : {}),
@@ -654,9 +707,15 @@ function toPart(card: Card, context: Context): Part | undefined {
   const { form } = chosen;
   // The keyword that chose the form — or, for a type whose forms carry no keyword of their own,
   // the keyword that selected the type (`PINDLY(1,0,0)`) — sits between the nodes; it is not one
-  // of them, and its arguments are the form's counts.
+  // of them, and its arguments are the form's counts. Nor is a form-choosing keyword written
+  // right before it: HSPICE's optional `VCVS` before `POLY(2)` (UG p.226). A node merely named
+  // like a keyword (`noise`) anywhere else stays a node.
   const matched = chosen.matched ?? keywords.find((token) => selectsType(type, dialect, keywordName(token)));
-  const candidates = positional.filter((token) => token !== matched);
+  // A form that takes every positional token takes them from among the pairs too: HSPICE's
+  // `W1 N=2 in1 in2 gnd out1 out2 gnd …` mixes nodes and parameters (UG p.154).
+  const positional = form.nodesEnd === 'all-positional' ? tokens.filter((token) => leading.includes(token) || token.class === 'word' || token.class === 'keyword') : leading;
+  const prefix = matched && positional[positional.indexOf(matched) - 1];
+  const candidates = positional.filter((token) => token !== matched && !(token === prefix && token.class === 'keyword' && chosen.chooses.has(keywordName(token))));
   const required = requiredCount(form.terminals);
   const needs = (n: number): never => {
     const first = tokens.find((token) => !candidates.includes(token));
@@ -681,7 +740,7 @@ function toPart(card: Card, context: Context): Part | undefined {
       }
       case 'model': {
         const most = expandTerminals(form, matched, pairs, undefined).length;
-        const modelAt = candidates.findIndex((token, index) => index >= required && models.has(token.text.toLowerCase()));
+        const modelAt = candidates.findIndex((token, index) => index >= required && findModel(context, token.text) !== undefined);
         if (modelAt !== -1) {
           // ngspice ends the nodes at the first token naming a defined model.
           count = modelAt;
@@ -723,7 +782,8 @@ function toPart(card: Card, context: Context): Part | undefined {
   // The tail: what follows the nodes, kept as the value string; a block titled by its master
   // (a subcircuit name) leaves that out of the value, as today.
   const next = tokens.find((token) => !nodeTokens.includes(token) && token !== matched);
-  if (type.tail === 'model' && nameToken === undefined && next?.class !== 'word') {
+  // A form that took every positional token leaves its model to a pair: HSPICE `S … MNAME=`.
+  if (type.tail === 'model' && nameToken === undefined && form.nodesEnd !== 'all-positional' && next?.class !== 'word') {
     throw new ParseError(`${ref} needs a model name after its nodes.${hint}`, end(card));
   }
   if (type.tail === 'value' && VALUE_REQUIRED.has(typeId) && next === undefined) {
@@ -794,23 +854,24 @@ function toPart(card: Card, context: Context): Part | undefined {
  * The form a line takes — one selected by a keyword or a pair on the line, else the type's default
  * (a default written for this dialect wins over the general one) — and the keyword that chose it.
  */
-function chooseForm(type: ElementType, dialect: DialectId, keywords: ParsedToken[], pairs: ParsedToken[]): { form: Form; matched?: ParsedToken } {
+function chooseForm(type: ElementType, dialect: DialectId, keywords: ParsedToken[], pairs: ParsedToken[]): { form: Form; matched?: ParsedToken; chooses: ReadonlySet<string> } {
   const applicable = type.forms.filter((form) => form.dialects === undefined || form.dialects.includes(dialect));
+  const chooses = new Set(applicable.flatMap((form) => (form.match && 'keyword' in form.match ? form.match.keyword : [])));
   for (const form of applicable) {
     if (!form.match) continue;
     if ('keyword' in form.match) {
       const { keyword } = form.match;
       const matched = keywords.find((token) => keyword.includes(keywordName(token)));
-      if (matched) return { form, matched };
+      if (matched) return { form, matched, chooses };
     } else {
       const { pair, values } = form.match;
-      if (pairs.some((token) => pair.includes(token.key!.toUpperCase()) && (values === undefined || values.includes(token.value!.toUpperCase())))) return { form };
+      if (pairs.some((token) => pair.includes(token.key!.toUpperCase()) && (values === undefined || values.includes(token.value!.toUpperCase())))) return { form, chooses };
     }
   }
   const form = applicable.find((candidate) => candidate.match === undefined && candidate.dialects !== undefined)
     ?? applicable.find((candidate) => candidate.match === undefined)
     ?? type.forms[0]!;
-  return { form };
+  return { form, chooses };
 }
 
 function requiredCount(terminals: Terminals): number {
@@ -898,7 +959,7 @@ function normalise(name: string, dialect: DialectId): string {
 /** Name each node token's pin: from the form's terminals, or by the block's pin rule. */
 function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinRule | undefined, nameToken: ParsedToken | undefined, context: Context, ref: string): Pin[] {
   const { dialect, subcircuits, notes } = context;
-  const nodes = nodeTokens.map((token) => normalise(token.text, dialect));
+  const nodes = nodeTokens.map((token) => joined(normalise(token.text, dialect), context));
   switch (rule) {
     case 'numbered':
       return nodes.map((node, index) => ({ name: String(index + 1), node }));
@@ -913,7 +974,7 @@ function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinR
       return nodes.map((node, index) => ({ name: ports?.names[index] ?? String(index + 1), node }));
     }
     case 'xspice-ports':
-      return xspicePins(nodeTokens, dialect);
+      return xspicePins(nodeTokens, context);
     case 'hide-tied-to-common':
     case undefined:
       return nodes.map((node, index) => ({ name: slots[index]?.name ?? String(index + 1), node }));
@@ -927,7 +988,8 @@ function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinR
  * `2[0]`, `2[1]` for a vector's members, `2+`, `2-` for a differential pair; an inverted node
  * keeps its `~` on the pin. `%vnam` names a voltage source, not a node, and is not drawn.
  */
-function xspicePins(tokens: ParsedToken[], dialect: DialectId): Pin[] {
+function xspicePins(tokens: ParsedToken[], context: Context): Pin[] {
+  const { dialect } = context;
   const pins: Pin[] = [];
   let port = 0;
   let modifier = '';
@@ -937,7 +999,7 @@ function xspicePins(tokens: ParsedToken[], dialect: DialectId): Pin[] {
     const inverted = raw.startsWith('~');
     const node = inverted ? raw.slice(1) : raw;
     if (node.toLowerCase() === 'null' || modifier.toLowerCase() === '%vnam') return;
-    pins.push({ name: inverted ? `~${name}` : name, node: normalise(node, dialect) });
+    pins.push({ name: inverted ? `~${name}` : name, node: joined(normalise(node, dialect), context) });
   };
   for (const token of tokens) {
     let text = token.text;

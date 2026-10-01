@@ -1,15 +1,17 @@
 {
   "tools": { "bison": "3.8.2", "flex": "2.6.4", "emscripten": "6.0.9" },
   "script": "scripts/grammars.sh",
-  "modules": ["ltspice.cjs", "ngspice.cjs", "pspice.cjs"],
+  "modules": ["hspice.cjs", "ltspice.cjs", "ngspice.cjs", "pspice.cjs"],
   "inputs": {
     "grammar/driver/driver.c": "41cce01538195fb0231d6b18a57aea2732b24ca73e307377a695225c17efc623",
     "grammar/driver/json.c": "09bc49b0ed0ddf8ad7443d4451951c549cfdbcbf20ecd62ab9874df3ebec577a",
     "grammar/driver/driver.h": "314ae1d5e4494cb7ea32e5f895c7c0306e36c180cae01c6e24ab4bdb1e48cabb",
     "grammar/driver/json.h": "f41f0281730ca9c0b20008ca4c6fa6a1f757dcbb525b1e9c5d91ae95eb5d4aba",
+    "grammar/generated/hspice.l": "b742cf7641fc05a2beacbc5bf97c3e7e9992ec706dc4898e28cdc1fa49e1d9a0",
     "grammar/generated/ltspice.l": "ad09e2514fb388d136dbfe0438ffb0806ba119d50ed973e32be9d6903d71ef69",
     "grammar/generated/ngspice.l": "a483f602b8e88601e5a44cc5d07ebdfb51a3e22d2d5035d0565963c0033a5510",
     "grammar/generated/pspice.l": "b6d3bafe63279d31179aac533394232112c22fac7d1528a04e38da6858289b47",
+    "grammar/generated/hspice.y": "01dfbe1ac777985108d80a627b8298d74de713278a39320f32edaeb4ade31ff1",
     "grammar/generated/ltspice.y": "8bf71f465187623d3b27d764c00e92e4c92af49ef7e6d240cc58d6a611710cc3",
     "grammar/generated/ngspice.y": "bf59ca48ac72ad923960011531493a816096056c4a9e32bb2b3c1063220e9780",
     "grammar/generated/pspice.y": "edbf9d0482c14e3a7db25b39097e339def09b1242e042ff4e33188c90fc70f72"

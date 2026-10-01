@@ -1,7 +1,8 @@
 /**
  * Parse a corpus of netlists with one vendored dialect module and report what each file became.
- * CI runs this over decks that cannot be committed — Xyce_Regression's `Netlists/XDM/PSPICE`
- * states no licence (Redmine #1190) — so a generated parser is still checked against real text.
+ * CI runs this over decks that cannot be committed — Xyce_Regression's `Netlists/XDM/PSPICE` and
+ * `Netlists/XDM/HSPICE` state no licence (Redmine #1190) — so a generated parser is still checked
+ * against real text.
  *
  *   node --import tsx scripts/corpus.ts --dialect pspice --ext .pspice,.net,.lib --title .pspice <dir>…
  *

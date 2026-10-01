@@ -32,6 +32,17 @@
   library as notes; `.ALIASES` blocks skipped. A digital primitive selected by
   its keyword no longer counts that keyword as a node.
 
+- `dialect="hspice"` reads a fence with a parser generated from the HSPICE
+  overlay (`vendor/parsers/hspice.cjs`): `*` and `$` comment (`$` after a blank,
+  a comma or a number), `;` is a name character, ` \` and ` \\` continue a line,
+  quoted expressions keep their spaces; `GND!`, `GROUND` and `!GND` are ground;
+  `B` IBIS buffer, `S` n-port, `W` coupled and `U` lumped lossy lines, `P` port;
+  four-node `LAPLACE`, `DELAY`, `POLE`, `FREQ`, `FOSTER`, `OPAMP`, `TRANSFORMER`,
+  `PWL`, `VCR` and `VCCAP` sources, bare `POLY`, an optional `VCVS`/`VCCS` before
+  the controlling pair; three-node `M`, four-node `J`; the `name.N` model
+  selector; `.CONNECT`; library sections calling sections of their own file;
+  `.DATA`, `.PROTECT` and `.ALTER` blocks skipped with a note.
+
 ## 0.1.0 — 2026-09-30
 
 - Draw `spice` fences as schematics in the Markdown preview, laid out by elkjs

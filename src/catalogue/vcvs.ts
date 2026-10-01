@@ -18,7 +18,6 @@ export default {
   spellings: [...everySpiceDialect('E'), ...spectreMasters('vcvs', 'pvcvs')],
   forms: [
     { terminals: CONTROLLED_SOURCE, nodesEnd: 'count' },
-    { match: { keyword: ['VCVS'] }, terminals: CONTROLLED_SOURCE, nodesEnd: 'count' },
     {
       match: { keyword: ['POLY', 'AND', 'NAND', 'OR', 'NOR'] },
       terminals: [
@@ -51,7 +50,9 @@ export default {
       dialects: ['hspice'],
       terminals: CONTROLLED_SOURCE,
       nodesEnd: 'count'
-    }
+    },
+    // HSPICE's optional keyword before the controlling pair (UG p.226, 245): last, so a form keyword after it wins.
+    { match: { keyword: ['VCVS'] }, terminals: CONTROLLED_SOURCE, nodesEnd: 'count' }
   ],
   tail: 'value',
   draw: { block: { title: { fixed: 'VCVS' } } }
