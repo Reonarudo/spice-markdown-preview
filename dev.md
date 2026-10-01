@@ -34,3 +34,16 @@ worker can load one dialect at a time.
 every module on `ubuntu-24.04` with the same pins and fails if a byte differs from what is
 committed. Local builds are for iterating; when CI disagrees with a build from your Mac,
 download its `rebuilt-parsers` artifact and commit those files rather than yours.
+
+## Iterating on a grammar without Emscripten
+
+A grammar change is quickest to try natively: compose, run flex and Bison on the composed
+files, compile them with the driver and a ten-line `main` that reads a file and prints
+`netlist_parse`'s JSON, and diff the output against what you expect. Use the same warning flags
+as `scripts/grammars.sh` (`-Wall -Wextra -Werror`, Bison `-Werror=all`, and fail on any flex
+diagnostic), because the WebAssembly build will. The vendored module is still rebuilt with
+`npm run grammars` once the grammar is right — the native build is for the loop, not the result.
+
+What the base grammar does, and the ngspice overlay on top of it, is written up in ADR 0008
+(*As built*) on the wiki; `test/parser-ngspice.test.ts` is the executable version, one case per
+finding of the ngspice research plus the real decks under `test/fixtures/ngspice/corpus/`.
