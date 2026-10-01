@@ -3,6 +3,7 @@
  * the files those include, and so on. Kept free of `vscode` so the rules can be tested alone.
  */
 import { includeReferences, MAX_INCLUDE_DEPTH, type IncludeSet } from './netlist';
+import type { DialectId } from './catalogue/types';
 
 /** A file as the cache holds it: its text or why it could not be read, and a digest of either. */
 export interface CachedFile {
@@ -28,12 +29,15 @@ export type Closure =
  *
  * A file over the limits is given an error rather than dropped, so that the netlist reader
  * reports it where it is included — and only if it is really included.
+ *
+ * Every file is read in `dialect`, the including fence's: which directives include, and whether
+ * `.lib file` alone does, differ by dialect. Its parser must already be loaded.
  */
-export function closure(source: string, lookup: (key: string) => CachedFile | undefined): Closure {
+export function closure(source: string, lookup: (key: string) => CachedFile | undefined, dialect: DialectId = 'ngspice'): Closure {
   const files: IncludeSet['files'] = {};
   const identity: string[] = [];
   const missing: string[] = [];
-  let frontier = includeReferences(source, '');
+  let frontier = includeReferences(source, '', dialect);
   let total = 0;
   let count = 0;
   for (let depth = 0; frontier.length > 0 && depth <= MAX_INCLUDE_DEPTH; depth++) {
@@ -60,7 +64,7 @@ export function closure(source: string, lookup: (key: string) => CachedFile | un
         continue;
       }
       files[key] = cached.text;
-      next.push(...includeReferences(cached.text, key));
+      next.push(...includeReferences(cached.text, key, dialect));
     }
     frontier = next;
   }

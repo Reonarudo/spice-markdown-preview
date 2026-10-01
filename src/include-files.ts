@@ -17,6 +17,7 @@ import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { closure, type CachedFile } from './include-closure';
 import { includeReferences } from './netlist';
 import type { Includes } from './renderer';
+import type { DialectId } from './catalogue/types';
 
 /** A single included file may be this large: vendor model libraries run to several megabytes. */
 export const MAX_FILE_BYTES = 8 * 1024 * 1024;
@@ -24,16 +25,24 @@ export const MAX_FILE_BYTES = 8 * 1024 * 1024;
 const MAX_CACHE_BYTES = 64 * 1024 * 1024;
 
 
+/** A dialect's parser in this process: loading, usable, or why it never will be. */
+type ParserState = 'loading' | 'ready' | { error: string };
+
 export class IncludeFiles implements vscode.Disposable {
   /** Keyed by absolute path; Map order is load order, oldest first. */
   private readonly cache = new Map<string, CachedFile>();
   private readonly loading = new Set<string>();
+  private readonly parsers = new Map<DialectId, ParserState>();
   private readonly subscriptions: vscode.Disposable[] = [];
   private bytes = 0;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
 
-  constructor() {
+  /**
+   * `loadParser` is the host's own copy of the worker's loader (ADR 0008): finding a fence's
+   * includes means reading it, and reading it needs its dialect's parser in this process too.
+   */
+  constructor(private readonly loadParser: (dialect: DialectId) => Promise<void>) {
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
     const changed = (uri: vscode.Uri): void => this.invalidate(uri);
     this.subscriptions.push(
@@ -55,13 +64,41 @@ export class IncludeFiles implements vscode.Disposable {
   }
 
   /**
-   * The files a fence includes, when all are loaded; `undefined` while some are still loading,
-   * in which case the preview is refreshed once they are. When files cannot be read here at all,
-   * the set says why, and the fence draws without them.
+   * Load a dialect's parser for reading includes here, once. Resolves with why it could not be
+   * loaded, or `undefined`; a dialect that failed is not asked for again while the process runs.
    */
-  prepare(source: string, env: unknown): Includes | undefined {
-    if (includeReferences(source, '').length === 0) return { files: {}, identity: '' };
+  async ensure(dialect: DialectId): Promise<string | undefined> {
+    const state = this.parsers.get(dialect);
+    if (state === 'ready') return undefined;
+    if (state && state !== 'loading') return state.error;
+    this.parsers.set(dialect, 'loading');
+    let outcome: ParserState;
+    try {
+      await this.loadParser(dialect);
+      outcome = 'ready';
+    } catch (error) {
+      outcome = { error: error instanceof Error ? error.message : String(error) };
+    }
+    this.parsers.set(dialect, outcome);
+    return outcome === 'ready' ? undefined : outcome.error;
+  }
+
+  /**
+   * The files a fence includes, when all are loaded; `undefined` while some are still loading —
+   * or while the dialect's parser is — in which case the preview is refreshed once they are. When
+   * files cannot be read here at all, the set says why, and the fence draws without them.
+   */
+  prepare(source: string, env: unknown, dialect: DialectId = 'ngspice'): Includes | undefined {
     const unavailable = (reason: string): Includes => ({ files: {}, unavailable: reason, identity: `unavailable:${reason}` });
+    const parser = this.parsers.get(dialect);
+    if (parser !== 'ready') {
+      if (parser !== 'loading') {
+        if (parser) return unavailable(parser.error);
+        void this.ensure(dialect).then(() => this.refresh());
+      }
+      return undefined;
+    }
+    if (includeReferences(source, '', dialect).length === 0) return { files: {}, identity: '' };
     if (!vscode.workspace.isTrusted) return unavailable('files are read only in a trusted workspace');
     const document = (env as { currentDocument?: unknown } | undefined)?.currentDocument;
     if (!(document instanceof vscode.Uri) || document.scheme === 'untitled') {
@@ -74,7 +111,7 @@ export class IncludeFiles implements vscode.Disposable {
     }
     const base = dirname(document.fsPath);
     const root = folder.uri.fsPath;
-    const found = closure(source, (key) => this.touch(resolve(base, key)));
+    const found = closure(source, (key) => this.touch(resolve(base, key)), dialect);
     if (found.status === 'ready') return { ...found.set, identity: `${base}\u0000${found.identity}` };
     for (const key of found.keys) void this.load(root, base, key);
     return undefined;

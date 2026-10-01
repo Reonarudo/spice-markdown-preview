@@ -1,3 +1,5 @@
+import { publicDialect, type PublicDialect } from './dialect';
+
 export type Alignment = 'left' | 'center' | 'right';
 
 export interface FenceAttributes {
@@ -5,6 +7,8 @@ export interface FenceAttributes {
   caption?: string;
   class?: string;
   align?: Alignment;
+  /** The dialect the fence is read in; absent means the setting decides. */
+  dialect?: PublicDialect;
 }
 
 export interface ParsedAttributes {
@@ -14,7 +18,7 @@ export interface ParsedAttributes {
 }
 
 const ALIGNMENTS: ReadonlySet<string> = new Set(['left', 'center', 'right']);
-const KEYS: ReadonlySet<string> = new Set(['alt', 'caption', 'class', 'align']);
+const KEYS: ReadonlySet<string> = new Set(['alt', 'caption', 'class', 'align', 'dialect']);
 
 /** One `key="value"` pair, single or double quoted, with `\` escaping a quote or a backslash. */
 const PAIR = /^([A-Za-z-]+)\s*=\s*("(?:\\["\\]|[^"\\])*"|'(?:\\['\\]|[^'\\])*')(?:\s+|$)/;
@@ -69,6 +73,16 @@ export function parseAttributes(info: string): ParsedAttributes {
         continue;
       }
       attributes.align = value as Alignment;
+      continue;
+    }
+    if (key === 'dialect') {
+      // Dropped, not read as ngspice: the fence falls back to the setting (the naming decision).
+      const dialect = publicDialect(value);
+      if (!dialect) {
+        diagnostics.push(`Unknown dialect ${JSON.stringify(value)}; using the spice.dialect setting.`);
+        continue;
+      }
+      attributes.dialect = dialect;
       continue;
     }
     attributes[key as 'alt' | 'caption' | 'class'] = value;

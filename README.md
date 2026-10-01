@@ -225,9 +225,22 @@ M2 out in 0 0 nch
 | `caption` | Text shown beneath the schematic |
 | `align` | `left`, `center` or `right` |
 | `class` | Extra CSS class on the schematic's `<svg>` |
+| `dialect` | The SPICE dialect this fence is written in (see below) |
 
 Values are quoted. A mistyped or malformed attribute never costs you the
 schematic: it is ignored, and a note is written to the output channel.
+
+## Dialects
+
+Netlists differ between simulators in what is a comment, which letters name
+which devices and how many nodes they take. A fence is read in the dialect its
+`dialect` attribute names — `ngspice`, `ltspice`, `pspice`, `hspice`, `xyce` or
+`spectre`, in any case — else in the `spice.dialect` setting's (per workspace
+folder; default `ngspice`). Files a fence includes are read in the fence's
+dialect. An unknown attribute value is dropped, with a note in the output
+channel, and the setting applies; an unknown setting value reads as ngspice.
+The fence is always ` ```spice `: the dialect is never guessed from its content,
+and ` ```ltspice ` is not claimed.
 
 ![An op-amp drawn as a labelled block in an inverting amplifier, and a netlist error pointing at its column](media/screenshots/caption-and-error.jpg)
 

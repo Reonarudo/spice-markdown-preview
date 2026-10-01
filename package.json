@@ -50,6 +50,28 @@
     "configuration": {
       "title": "SPICE Schematic Preview",
       "properties": {
+        "spice.dialect": {
+          "type": "string",
+          "enum": [
+            "ngspice",
+            "ltspice",
+            "pspice",
+            "hspice",
+            "xyce",
+            "spectre"
+          ],
+          "enumDescriptions": [
+            "ngspice (the default)",
+            "LTspice",
+            "PSpice",
+            "HSPICE",
+            "Xyce",
+            "Spectre"
+          ],
+          "default": "ngspice",
+          "scope": "resource",
+          "markdownDescription": "The dialect `spice` fences are read in, unless a fence names its own with a `dialect` attribute. Takes effect on the next render."
+        },
         "spice.layoutTimeout": {
           "type": "number",
           "default": 3,

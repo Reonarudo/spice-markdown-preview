@@ -1,8 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
 import MarkdownIt from 'markdown-it';
 import { createPreview } from '../src/preview';
+import { DIALECT_NAMES, type PublicDialect } from '../src/dialect';
 
 const document = [
   '```spice {caption="RC low-pass" algin="typo"}',
@@ -69,11 +71,51 @@ test('the preview takes a live budget and clears its cache on demand', async () 
   }
 });
 
+test('the dialect is the fence attribute, else the setting, else ngspice, and reaches the includes provider', async () => {
+  let setting: PublicDialect | undefined;
+  const seen: string[] = [];
+  const preview = await createPreview(resolve('dist'), () => {}, {
+    dialect: (env) => { assert.deepEqual(env, { document: 'demo.md' }); return setting; },
+    includes: (_source, _env, dialect) => { seen.push(dialect); return { files: {}, identity: '' }; }
+  });
+  try {
+    const md = preview.extendMarkdownIt(new MarkdownIt());
+    const env = { document: 'demo.md' };
+    md.render('```spice\nR1 a 0 1k\n```', env);
+    setting = 'xyce';
+    md.render('```spice\nR1 a 0 1k\n```', env);
+    md.render('```spice {dialect="HSPICE"}\nR1 a 0 1k\n```', env);
+    md.render('```spice {dialect="nope"}\nR1 a 0 1k\n```', env);
+    assert.deepEqual(seen, ['ngspice', 'xyce', 'hspice', 'xyce']);
+  } finally {
+    preview.dispose();
+  }
+});
+
+test('the chosen dialect reaches the worker, which loads its parser', async () => {
+  // A dialect whose module is not vendored yet is the proof: the worker names it in its failure.
+  // Once every overlay ships, there is nothing left to tell apart this way and the test passes trivially.
+  const missing = DIALECT_NAMES.find((dialect) => !existsSync(resolve('vendor', 'parsers', `${dialect}.cjs`)));
+  const preview = await createPreview(resolve('dist'), () => {}, { dialect: () => missing });
+  try {
+    const md = preview.extendMarkdownIt(new MarkdownIt());
+    assert.match(md.render('```spice {dialect="ngspice"}\nR1 a 0 1k\n```'), /<svg class="spice"/, 'the attribute overrides the setting');
+    if (!missing) return;
+    const html = md.render('```spice\nR1 a 0 1k\n```');
+    assert.match(html, new RegExp(`<pre>The ${missing} parser could not be loaded: `));
+    // Cached per dialect: the same netlist in ngspice is not the cached failure.
+    assert.match(md.render('```spice {dialect="NGSPICE"}\nR1 a 0 1k\n```'), /<svg class="spice"/);
+  } finally {
+    preview.dispose();
+  }
+});
+
 test('a fence waits for its included files, then draws with them', async () => {
   let ready = false;
   const preview = await createPreview(resolve('dist'), () => {}, {
-    includes: (_source, env) => {
+    includes: (_source, env, dialect) => {
       assert.deepEqual(env, { document: 'demo.md' }, 'the render environment reaches the provider');
+      assert.equal(dialect, 'ngspice');
       return ready ? { files: { 'models.lib': '.model Q PNP' }, identity: 'v1' } : undefined;
     }
   });

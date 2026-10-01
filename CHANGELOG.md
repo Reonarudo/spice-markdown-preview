@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- A fence names its dialect with a `dialect` attribute (`ngspice`, `ltspice`,
+  `pspice`, `hspice`, `xyce` or `spectre`); fences without one follow the new
+  `spice.dialect` setting (per workspace folder, default `ngspice`). Included
+  files are read in the fence's dialect.
 - Netlists are read by a parser generated from an ngspice grammar with flex and
   Bison, compiled to WebAssembly and vendored (`vendor/parsers/ngspice.cjs`), with
   the element catalogue deciding each element's terminals. New: `A`, `N`, `P`, `U`

@@ -2,6 +2,7 @@ import type MarkdownItConstructor from 'markdown-it';
 type MarkdownIt = InstanceType<typeof MarkdownItConstructor>;
 import { markdownPlugin } from './markdown';
 import { createRenderer, createRuntime, type Includes } from './renderer';
+import { chooseDialect, type PublicDialect } from './dialect';
 
 export interface Preview {
   extendMarkdownIt(md: MarkdownIt): MarkdownIt;
@@ -17,7 +18,12 @@ export interface PreviewOptions {
    * The files a fence includes, or `undefined` while they load. Without it, includes are noted
    * and skipped, as they are wherever files cannot be read.
    */
-  includes?: (source: string, env: unknown) => Includes | undefined;
+  includes?: (source: string, env: unknown, dialect: PublicDialect) => Includes | undefined;
+  /**
+   * The `spice.dialect` setting for the document being previewed, or `undefined` when it is unset
+   * or not a dialect. A fence's own `dialect` attribute wins over it; without either, ngspice.
+   */
+  dialect?: (env: unknown) => PublicDialect | undefined;
 }
 
 const NO_FILES: Includes = { files: {}, unavailable: 'no files are available here', identity: 'none' };
@@ -40,9 +46,10 @@ export async function createPreview(
     for (const note of result.notes) log(`${label(source)}: ${note}`);
   });
   return {
-    extendMarkdownIt: (md) => markdownPlugin(md, (source, env) => {
-      const includes = options.includes ? options.includes(source, env) : NO_FILES;
-      return includes ? render(source, includes) : { status: 'loading' };
+    extendMarkdownIt: (md) => markdownPlugin(md, (source, env, attributes) => {
+      const dialect = chooseDialect(attributes.dialect, options.dialect?.(env));
+      const includes = options.includes ? options.includes(source, env, dialect) : NO_FILES;
+      return includes ? render(source, includes, dialect) : { status: 'loading' };
     }, log),
     clear: () => render.clear(),
     dispose: () => runtime.dispose()

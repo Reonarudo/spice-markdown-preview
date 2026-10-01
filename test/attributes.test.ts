@@ -8,13 +8,14 @@ test('a bare fence has no attributes and nothing to report', () => {
 
 test('reads every supported key, in any order', () => {
   const { attributes, diagnostics } = parseAttributes(
-    'spice {caption="Figure 1: RC filter" alt="A resistor and a capacitor" align="center" class="wide"}'
+    'spice {caption="Figure 1: RC filter" alt="A resistor and a capacitor" align="center" class="wide" dialect="ltspice"}'
   );
   assert.deepEqual(attributes, {
     caption: 'Figure 1: RC filter',
     alt: 'A resistor and a capacitor',
     align: 'center',
-    class: 'wide'
+    class: 'wide',
+    dialect: 'ltspice'
   });
   assert.deepEqual(diagnostics, []);
 });
@@ -38,6 +39,18 @@ test('an unknown alignment is dropped and the rest is honoured', () => {
   const { attributes, diagnostics } = parseAttributes('spice {align="middle" alt="kept"}');
   assert.deepEqual(attributes, { alt: 'kept' });
   assert.match(diagnostics[0]!, /middle/);
+});
+
+test('a dialect is matched in any case, with no aliases, and an unknown one falls back to the setting', () => {
+  for (const [written, read] of [['ngspice', 'ngspice'], ['LTspice', 'ltspice'], ['PSPICE', 'pspice'], ['HSpice', 'hspice'], ['Xyce', 'xyce'], ['Spectre', 'spectre']]) {
+    assert.deepEqual(parseAttributes(`spice {dialect="${written}"}`), { attributes: { dialect: read }, diagnostics: [] }, written);
+  }
+  for (const unknown of ['spectre-spice', 'ltspice-xvii', 'ng spice', 'spice', '']) {
+    const { attributes, diagnostics } = parseAttributes(`spice {dialect="${unknown}" alt="kept"}`);
+    assert.deepEqual(attributes, { alt: 'kept' }, unknown);
+    assert.equal(diagnostics.length, 1, unknown);
+    assert.match(diagnostics[0]!, /Unknown dialect .*spice\.dialect/, unknown);
+  }
 });
 
 test('a duplicate key keeps the first value', () => {

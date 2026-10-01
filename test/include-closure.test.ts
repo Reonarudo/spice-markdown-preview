@@ -1,9 +1,14 @@
 import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { createRequire } from 'node:module';
 import { closure, MAX_FILES, MAX_TOTAL_BYTES, type CachedFile } from '../src/include-closure';
+import { loadParser, type ParserFactory } from '../src/parser/registry';
 import { loadNgspice } from './helpers/ngspice';
 
 before(loadNgspice);
+// Until the PSpice overlay ships its module, the ngspice one stands in under PSpice's name: the
+// scanning is close enough for `.lib`, and what is under test is that the dialect reaches the reader.
+before(() => loadParser('pspice', createRequire(import.meta.url)('../vendor/parsers/ngspice.cjs') as ParserFactory));
 
 const file = (text: string): CachedFile => ({ text, bytes: text.length, digest: `d:${text}` });
 
@@ -22,6 +27,13 @@ test('uncached files are asked for one level at a time', () => {
   const ready = closure('.include a.lib\n.lib b.lib tt', (key) => cache.get(key));
   assert.equal(ready.status, 'ready');
   assert.deepEqual(ready.status === 'ready' && Object.keys(ready.set.files).sort(), ['a.lib', 'b.lib', 'sub/c.lib']);
+});
+
+test('files are followed in the fence\'s dialect: a one-argument .lib includes a file in PSpice, not in ngspice', () => {
+  const cache = new Map([['models.lib', file('.include deeper.lib')], ['deeper.lib', file('.model Q NPN')]]);
+  assert.deepEqual(closure('.lib models.lib\nR1 a 0 1', (key) => cache.get(key)), { status: 'ready', set: { files: {} }, identity: '' });
+  const pspice = closure('.lib models.lib\nR1 a 0 1', (key) => cache.get(key), 'pspice');
+  assert.deepEqual(pspice.status === 'ready' && Object.keys(pspice.set.files).sort(), ['deeper.lib', 'models.lib']);
 });
 
 test('a file that failed to load is passed on as an error, not asked for again', () => {

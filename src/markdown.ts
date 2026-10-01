@@ -17,8 +17,11 @@ const CLAIMED = /^spice(?:\s+\{|$)/;
 /** What the fence rule is given for one fence: a drawing's outcome, or word that files are loading. */
 export type Outcome = RenderResult | { status: 'loading' };
 
-/** `env` is markdown-it's render environment; VS Code puts the document's URI in it. */
-export type Render = (source: string, env: unknown) => Outcome;
+/**
+ * `env` is markdown-it's render environment; VS Code puts the document's URI in it. `attributes`
+ * are the fence's, already checked: the renderer reads `dialect` from them.
+ */
+export type Render = (source: string, env: unknown, attributes: FenceAttributes) => Outcome;
 export type Report = (message: string) => void;
 
 /**
@@ -41,7 +44,7 @@ export function markdownPlugin(md: MarkdownIt, render: Render, report: Report = 
     for (const diagnostic of diagnostics) {
       report(diagnostic);
     }
-    const result = render(token.content, env);
+    const result = render(token.content, env, attributes);
     if (result.status === 'loading') {
       return '<div class="spice-loading" role="status">Reading included files…</div>\n';
     }

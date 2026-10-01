@@ -13,6 +13,14 @@ test('claims exactly spice fences and passes the netlist through', () => {
   assert.equal(seen, 'R1 a 0 1k\n');
 });
 
+test('the fence rule hands the checked attributes to the renderer, dialect included', () => {
+  const given: unknown[] = [];
+  const md = markdownPlugin(new MarkdownIt(), (_source, env, attributes) => { given.push(env, attributes); return schematic(); });
+  md.render('```spice {dialect="XYCE" alt="x"}\nR1 a 0 1k\n```', { document: 'demo.md' });
+  md.render('```spice {dialect="nope"}\nR1 a 0 1k\n```');
+  assert.deepEqual(given, [{ document: 'demo.md' }, { dialect: 'xyce', alt: 'x' }, {}, {}]);
+});
+
 test('preserves unrelated fences byte for byte including highlighting', () => {
   for (const language of ['cir', 'SPICE', 'spice extra', 'ngspice', 'netlist', 'graphviz', 'smiles', 'swift', '']) {
     const input = '```' + language + '\nR1 a 0 1k\n```';

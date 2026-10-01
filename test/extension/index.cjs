@@ -64,7 +64,47 @@ exports.run = async () => {
   }
 
   await includedFiles(render);
+  await dialects(render);
 };
+
+/** The `dialect` attribute and the `spice.dialect` setting reach the worker and the include reader. */
+async function dialects(render) {
+  const configuration = vscode.workspace.getConfiguration('spice');
+  assert.equal(configuration.get('dialect'), 'ngspice');
+  assert.deepEqual(vscode.extensions.getExtension('ReoX86.spice-schematic-preview').packageJSON.contributes.configuration.properties['spice.dialect'].enum,
+    ['ngspice', 'ltspice', 'pspice', 'hspice', 'xyce', 'spectre']);
+  // Any case; an unknown value is dropped and the fence still draws.
+  assert.match(await render(fence('spice {dialect="NGspice"}', 'R1 a 0 1k')), /<svg class="spice"/);
+  assert.match(await render(fence('spice {dialect="nope"}', 'R2 a 0 1k')), /<svg class="spice"/);
+  // A dialect whose parser is not vendored yet proves the name travels: the worker reports it.
+  // The host loads a dialect's parser at its first fence, so the first render may still be loading.
+  const vendored = await fs.readdir(path.join(vscode.extensions.getExtension('ReoX86.spice-schematic-preview').extensionPath, 'vendor', 'parsers'));
+  const missing = ['ngspice', 'ltspice', 'pspice', 'hspice', 'xyce', 'spectre'].find((dialect) => !vendored.includes(`${dialect}.cjs`));
+  if (!missing) return;
+  const failed = new RegExp(`<pre>The ${missing} parser could not be loaded: `);
+  await settled(render, fence(`spice {dialect="${missing}"}`, 'R3 a 0 1k'), failed);
+  // The setting applies to every fence without an attribute, and changing it redraws cached fences.
+  assert.match(await render(fence('spice', 'R3 a 0 1k')), /<svg class="spice"/);
+  await configuration.update('dialect', missing, vscode.ConfigurationTarget.Global);
+  try {
+    assert.match(await render(fence('spice', 'R3 a 0 1k')), failed);
+    assert.match(await render(fence('spice {dialect="ngspice"}', 'R3 a 0 1k')), /<svg class="spice"/, 'the attribute wins');
+  } finally {
+    await configuration.update('dialect', undefined, vscode.ConfigurationTarget.Global);
+  }
+  assert.match(await render(fence('spice', 'R3 a 0 1k')), /<svg class="spice"/);
+}
+
+/** Render until what loads asynchronously — included files, a dialect's parser — has, and the output matches. */
+async function settled(render, document, pattern) {
+  let html = '';
+  for (let i = 0; i < 100; i++) {
+    html = await render(document);
+    if (pattern.test(html)) return html;
+    await delay(100);
+  }
+  assert.fail(`timed out waiting for ${pattern} in ${html.slice(0, 400)}`);
+}
 
 /** `.include` and `.lib` against real files in the trusted test workspace. */
 async function includedFiles(render) {
@@ -77,16 +117,7 @@ async function includedFiles(render) {
     await fs.writeFile(file, '```spice\n' + body + '\n```\n');
     return vscode.workspace.openTextDocument(file);
   };
-  /** Render until the included files have loaded and the output matches. */
-  const ready = async (document, pattern) => {
-    let html = '';
-    for (let i = 0; i < 100; i++) {
-      html = await render(document);
-      if (pattern.test(html)) return html;
-      await delay(100);
-    }
-    assert.fail(`timed out waiting for ${pattern} in ${html.slice(0, 400)}`);
-  };
+  const ready = (document, pattern) => settled(render, document, pattern);
 
   // An included model decides the transistor type; an included circuit's elements are drawn.
   const good = await write('good.md', '.include "models/q.lib"\n.inc stage.cir\nQ1 c b e Q\nR1 b 0 10k');
