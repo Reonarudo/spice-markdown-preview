@@ -1,0 +1,43 @@
+* source ABM_REGULATOR
+* An analog behavioural deck: dependent sources in PSpice's VALUE, LAPLACE, TABLE, POLY and
+* flux forms, a model written AKO: another, a lateral PNP with a bracketed substrate, a lossy
+* line, a GaAsFET, an IGBT and both switches. Two circuits in one file, as PSpice allows.
+.PARAM GAIN=10 VREF={2.5}
+.FUNC CLAMP(x) {LIMIT(x, 0, 5)}
+.LIB "regulator_models.lib"
+V_VIN        IN 0 DC 12 AC 1
++SIN 12 0.1 1KHz 0 0 0
+R_R1         IN FB RMOD 10k TC=0,0
+R_R2         FB 0 10k
+E_ERR        ERR 0 VALUE = {CLAMP(GAIN*(VREF - V(FB)))}
+E_FILT       FILT 0 LAPLACE {V(ERR)} = {1/(1+s/6283)}
+G_LOAD       OUT 0 TABLE {V(OUT)} = (0,0) (5,1m) (12,5m)
+E_SUM        SUM 0 POLY(2) (FILT,0) (FB,0) 0 1 1
+F_SENSE      SNS 0 V_VIN 1
+H_MON        MON 0 V_VIN 1k
+E_FLUX       FLX 0 F = {0.1*V(SUM)}
+Q_PASS       OUT ERR IN [SUB] QPASS
+Q_DRV        ERR SUM 0 QDRV
+B_GAAS       D1 G1 0 GMOD
+Z_IGBT       C1 SUM 0 IGBT_MOD
+S_SW         OUT LOAD SUM 0 SMOD
+W_SW         LOAD 0 V_VIN WMOD
+T_LINE       SUM 0 TL 0 LEN=0.1 R=0.05 L=1e-8 G=0 C=20e-12
+C_OUT        OUT 0 CMOD 100u IC=0
+.MODEL QDRV NPN (BF=100 IS=1e-14)
+.MODEL QPNP LPNP (BF=40)
+.MODEL QPASS AKO:QPNP LPNP (BF=50)
+.MODEL RMOD RES R=1 TC1=0
+.MODEL CMOD CAP C=1
+.MODEL GMOD GASFET (VTO=-2)
+.MODEL IGBT_MOD NIGBT (TAU=7.1e-8)
+.MODEL SMOD VSWITCH (RON=1 ROFF=1MEG VON=1 VOFF=0)
+.MODEL WMOD ISWITCH (ION=10mA IOFF=0mA RON=1 ROFF=1E6)
+.TRAN 10us 10ms
+.OPTIONS ABSTOL= 1e-10
+.PROBE V(OUT) V([FB]) I(R_R1)
+.END
+* A second circuit in the same file, as PSpice allows; the preview reads only the first.
+Second circuit
+R1 a 0 1k
+.END

@@ -114,17 +114,30 @@ const TITLE_HINT = ' If this line is a title, start it with * to make it a comme
 
 /**
  * Dialects in which a one-argument `.lib file` reads the whole file. ngspice reads a library only
- * by section (`.lib file section`); the overlay tickets settle the others.
+ * by section (`.lib file section`); LTspice and PSpice read the file (confirmed by their overlay
+ * tickets); the remaining overlay tickets settle HSPICE and Xyce.
  */
 const WHOLE_FILE_LIB: ReadonlySet<DialectId> = new Set(['ltspice', 'pspice']);
 
 /**
  * Dialects whose one-argument `.lib file` is a library, not an include: elements at the file's top
- * level are not part of the circuit (LTspice help: "Circuit elements at global scope are ignored"),
- * and a file that is not here is noted, not an error — LTspice resolves bare names such as
- * `standard.dio` against its own library folder, which the preview cannot see.
+ * level are not part of the circuit (LTspice help: "Circuit elements at global scope are ignored";
+ * PSpice RG p.51: a library holds only models, subcircuits, parameters and functions), and a file
+ * that is not here is noted, not an error — both simulators resolve bare names such as
+ * `standard.dio` or `nom.lib` against their own library folders, which the preview cannot see.
+ * The wording names the simulator.
  */
-const LIBRARY_LIB: ReadonlySet<DialectId> = new Set(['ltspice']);
+const LIBRARY_LIB: Readonly<Partial<Record<DialectId, { folder: string; dropped: string }>>> = {
+  ltspice: { folder: 'LTspice reads it from its own library folder.', dropped: 'LTspice ignores them in a .lib file.' },
+  pspice: { folder: 'PSpice reads it from its library path.', dropped: 'a PSpice library holds only models, subcircuits, parameters and functions.' }
+};
+
+/**
+ * Dialects whose `.lib` has no sections and no `.endl` (PSpice RG p.51): a one-argument `.lib` is
+ * always a whole file, never the start of a section, and a bare `.lib` names the default library,
+ * `nom.lib`, which lives in the simulator's library path.
+ */
+const SECTIONLESS_LIB: ReadonlySet<DialectId> = new Set(['pspice']);
 
 /** Types whose value may not be left off; a source without one is simply a 0 V or 0 A source. */
 const VALUE_REQUIRED: ReadonlySet<ElementTypeId> = new Set(['resistor', 'capacitor', 'inductor']);
@@ -274,16 +287,17 @@ function includeTarget(cards: Card[], index: number, dialect: DialectId): { path
   if (name.startsWith('.inc')) return path ? { path } : undefined;
   if (name !== '.lib' || !path) return undefined;
   if (section) return { path, section };
-  if (isSectionStart(cards, index)) return undefined;
+  if (isSectionStart(cards, index, dialect)) return undefined;
   return WHOLE_FILE_LIB.has(dialect) ? { path } : undefined;
 }
 
 /**
  * Whether a one-argument `.lib` opens a section. Sections do not nest, so it does when the next
- * section marker — another one-argument `.lib`, or `.endl` — is an `.endl`.
+ * section marker — another one-argument `.lib`, or `.endl` — is an `.endl`. A dialect whose
+ * libraries have no sections never opens one.
  */
-function isSectionStart(cards: Card[], index: number): boolean {
-  if (!isOneArgumentLib(cards[index]!)) return false;
+function isSectionStart(cards: Card[], index: number, dialect: DialectId): boolean {
+  if (SECTIONLESS_LIB.has(dialect) || !isOneArgumentLib(cards[index]!)) return false;
   const next = cards.slice(index + 1).find((later) => isOneArgumentLib(later) || directive(later) === '.endl');
   return next !== undefined && !isOneArgumentLib(next);
 }
@@ -302,7 +316,7 @@ function expand(cards: Card[], from: string, includes: IncludeSet, notes: string
   for (let index = 0; index < cards.length; index++) {
     const card = cards[index]!;
     const word = directive(card);
-    if (isSectionStart(cards, index)) {
+    if (isSectionStart(cards, index, dialect)) {
       // Only a library file selected by `.lib path name` defines sections; ngspice refuses them
       // anywhere else, and the drawing simply goes on without them.
       if (stack.length === 0 || !WHOLE_FILE_LIB.has(dialect)) {
@@ -321,6 +335,11 @@ function expand(cards: Card[], from: string, includes: IncludeSet, notes: string
     if (word.startsWith('.inc') || word === '.lib') {
       const target = includeTarget(cards, index, dialect);
       if (!target) {
+        if (word === '.lib' && card.parsed.tokens.length === 0 && SECTIONLESS_LIB.has(dialect)) {
+          // PSpice's bare `.LIB` reads nom.lib from its library path, which the preview cannot see.
+          notes.push(`${capitalise(where(card))}: .lib without a file name is not read: it names nom.lib, which PSpice reads from its library path.`);
+          continue;
+        }
         if (isOneArgumentLib(card)) {
           const path = card.parsed.tokens[0]!;
           throw new ParseError(`.lib ${path.text} needs a section name, e.g. .lib ${path.text} tt; ${dialect} reads a library only by section.`, at(card, { line: path.line, column: path.end + 1 }));
@@ -340,9 +359,9 @@ function include(card: Card, target: { path: ParsedToken; section?: ParsedToken 
   const here = (token: ParsedToken) => at(card, token);
   const shown = unquote(path.text);
   // A whole-file `.lib` in a dialect where it names a library rather than an include.
-  const library = section === undefined && directive(card) === '.lib' && LIBRARY_LIB.has(dialect);
+  const library = section === undefined && directive(card) === '.lib' ? LIBRARY_LIB[dialect] : undefined;
   const skipLibrary = (reason: string): Card[] => {
-    notes.push(`${capitalise(where(card))}: .lib ${shown} is not read: ${reason}. LTspice reads it from its own library folder.`);
+    notes.push(`${capitalise(where(card))}: .lib ${shown} is not read: ${reason}. ${library!.folder}`);
     return [];
   };
   let key: string;
@@ -396,7 +415,7 @@ function include(card: Card, target: { path: ParsedToken; section?: ParsedToken 
     if ((word === '.ends' || word === '.eom') && depth > 0) depth--;
     kept.push(found);
   }
-  if (dropped > 0) notes.push(`${capitalise(where(card))}: ${dropped} element${dropped === 1 ? '' : 's'} at the top level of ${shown} ${dropped === 1 ? 'is' : 'are'} not part of the circuit; LTspice ignores them in a .lib file.`);
+  if (dropped > 0) notes.push(`${capitalise(where(card))}: ${dropped} element${dropped === 1 ? '' : 's'} at the top level of ${shown} ${dropped === 1 ? 'is' : 'are'} not part of the circuit; ${library.dropped}`);
   return kept;
 }
 
@@ -405,7 +424,7 @@ function include(card: Card, target: { path: ParsedToken; section?: ParsedToken 
 interface Context {
   dialect: DialectId;
   models: Map<string, Model>;
-  subcircuits: Map<string, string[]>;
+  subcircuits: Map<string, Ports>;
   notes: string[];
 }
 
@@ -463,7 +482,10 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
       continue;
     }
     if (word === '.model') {
-      const [name, type, ...rest] = card.parsed.tokens;
+      const [name, ...after] = card.parsed.tokens;
+      // PSpice: `.model name AKO:reference type (…)` — the type follows the reference it is derived from.
+      const ako = after[0] !== undefined && /^ako:/i.test(after[0].text) ? (after[0].text.length === 4 ? 2 : 1) : 0;
+      const [type, ...rest] = after.slice(ako);
       if (name && type) {
         const level = rest.find((token) => token.class === 'pair' && token.key!.toLowerCase() === 'level');
         const parsed = level ? Number.parseInt(level.value!, 10) : Number.NaN;
@@ -507,18 +529,41 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
   return { parts, notes };
 }
 
-/** The ports of `.subckt name ports… [params: …]`, written bare or as one parenthesised group. */
-function subcircuitPorts(tokens: ParsedToken[]): string[] {
-  const [first] = tokens;
-  if (first?.class === 'group' && first.text.startsWith('(')) {
-    return first.text.slice(1, -1).split(/[\s,]+/).filter((port) => port.length > 0);
+/** A subcircuit's ports in order; the first `required` are mandatory, the rest PSpice `OPTIONAL:` pins a call may leave off from the right. */
+interface Ports {
+  names: string[];
+  required: number;
+}
+
+/**
+ * The ports of `.subckt name ports… [optional: pin=default …] [params: …] [text: …]`, written bare
+ * or as one parenthesised group. PSpice's `OPTIONAL:` pins (RG p.105–108) follow the required
+ * ports as `name=default` pairs, and a call may omit them from the right.
+ */
+function subcircuitPorts(tokens: ParsedToken[]): Ports {
+  const names: string[] = [];
+  let optional = false;
+  let required = 0;
+  for (const [index, token] of tokens.entries()) {
+    if (index === 0 && token.class === 'group' && token.text.startsWith('(')) {
+      names.push(...token.text.slice(1, -1).split(/[\s,]+/).filter((port) => port.length > 0));
+      continue;
+    }
+    if (token.class === 'word' && /^optional:$/i.test(token.text)) {
+      optional = true;
+      required = names.length;
+      continue;
+    }
+    if (token.class === 'word' && /^(params|text):$/i.test(token.text)) break;
+    if (optional) {
+      if (token.class !== 'pair') break;
+      names.push(token.key!);
+    } else {
+      if (token.class !== 'word') break;
+      names.push(token.text);
+    }
   }
-  const ports: string[] = [];
-  for (const token of tokens) {
-    if (token.class !== 'word' || /^params:$/i.test(token.text)) break;
-    ports.push(token.text);
-  }
-  return ports;
+  return { names, required: optional ? required : names.length };
 }
 
 // --- Elements --------------------------------------------------------------------------------------
@@ -529,19 +574,39 @@ interface Slot {
   optional: boolean;
 }
 
-/** The leading tokens that may be nodes: words and keywords, up to the first pair, group or `params:`. */
+/** The leading tokens that may be nodes: words and keywords, up to the first pair, group, `params:` or PSpice `text:`. */
 function positionalTokens(tokens: ParsedToken[]): ParsedToken[] {
   const found: ParsedToken[] = [];
   for (const token of tokens) {
-    if ((token.class !== 'word' && token.class !== 'keyword') || /^params:$/i.test(token.text)) break;
+    if ((token.class !== 'word' && token.class !== 'keyword') || /^(params|text):$/i.test(token.text)) break;
     found.push(token);
   }
   return found;
 }
 
-/** A keyword token's name without its arguments, upper-cased: `POLY(2)` → `POLY`. */
+/** A keyword token's name without its arguments, upper-cased: `POLY(2)` → `POLY`, PSpice's `PINDLY (5,0,10)` → `PINDLY`. */
 function keywordName(token: ParsedToken): string {
-  return token.text.replace(/\(.*$/, '').toUpperCase();
+  return token.text.replace(/\s*\(.*$/, '').toUpperCase();
+}
+
+/** A keyword with its arguments as a title: `STIM( 1, 1 )` → `STIM(1,1)`. */
+function keywordTitle(token: ParsedToken): string {
+  return token.text.replace(/\s*\(\s*/, '(').replace(/\s*\)$/, ')').replace(/\s*,\s*/g, ',');
+}
+
+/**
+ * PSpice writes a `POLY(n)` source's controlling node pairs either bare or as `(1,0)` (RG p.170):
+ * the groups after the keyword that hold exactly two names are unwrapped into word tokens.
+ */
+function unwrapPolyPairs(tokens: ParsedToken[]): ParsedToken[] {
+  const poly = tokens.findIndex((token) => token.class === 'keyword' && keywordName(token) === 'POLY');
+  if (poly === -1) return tokens;
+  return tokens.flatMap((token, index) => {
+    if (index <= poly || token.class !== 'group' || !token.text.startsWith('(')) return [token];
+    const names = token.text.slice(1, -1).split(/[\s,]+/).filter((name) => name.length > 0);
+    if (names.length !== 2 || names.some((name) => /[(){}=*/]/.test(name))) return [token];
+    return names.map((text) => ({ class: 'word' as const, text, line: token.line, column: token.column, end: token.end }));
+  });
 }
 
 /** The numbers in a keyword's parentheses: `NANDA(2,4)` → `[2, 4]`. */
@@ -560,7 +625,8 @@ function toPart(card: Card, context: Context): Part | undefined {
   if (parsed.kind !== 'element' || parsed.letter === undefined) {
     throw new ParseError(`"${parsed.kind === 'element' ? parsed.ref : parsed.name}" is not an element name. Element names start with a letter, e.g. R1.${titleHint(head(card))}`, head(card));
   }
-  const { ref, letter, tokens } = parsed;
+  const { ref, letter } = parsed;
+  const tokens = dialect === 'pspice' ? unwrapPolyPairs(parsed.tokens) : parsed.tokens;
   const line = parsed.line;
   const origin = card.file ? { file: card.file } : {};
   const note = (text: string): void => { notes.push(`${capitalise(where(card))}: ${text}`); };
@@ -584,8 +650,12 @@ function toPart(card: Card, context: Context): Part | undefined {
     throw new ParseError(`Element type ${letter} (${ref}) is not supported.${hint}`, head(card));
   }
   const type = CATALOGUE[typeId];
-  const { form, matched } = chooseForm(type, dialect, keywords, pairs);
-  // The keyword that chose the form sits between the nodes; it is not one of them.
+  const chosen = chooseForm(type, dialect, keywords, pairs);
+  const { form } = chosen;
+  // The keyword that chose the form — or, for a type whose forms carry no keyword of their own,
+  // the keyword that selected the type (`PINDLY(1,0,0)`) — sits between the nodes; it is not one
+  // of them, and its arguments are the form's counts.
+  const matched = chosen.matched ?? keywords.find((token) => selectsType(type, dialect, keywordName(token)));
   const candidates = positional.filter((token) => token !== matched);
   const required = requiredCount(form.terminals);
   const needs = (n: number): never => {
@@ -605,12 +675,12 @@ function toPart(card: Card, context: Context): Part | undefined {
   } else {
     switch (form.nodesEnd) {
       case 'count': {
-        count = Math.min(candidates.length, expandTerminals(form, keywords, pairs, undefined).length);
+        count = Math.min(candidates.length, expandTerminals(form, matched, pairs, undefined).length);
         if (count < required) needs(required);
         break;
       }
       case 'model': {
-        const most = expandTerminals(form, keywords, pairs, undefined).length;
+        const most = expandTerminals(form, matched, pairs, undefined).length;
         const modelAt = candidates.findIndex((token, index) => index >= required && models.has(token.text.toLowerCase()));
         if (modelAt !== -1) {
           // ngspice ends the nodes at the first token naming a defined model.
@@ -648,7 +718,7 @@ function toPart(card: Card, context: Context): Part | undefined {
   if (solves && solved === undefined) {
     throw new ParseError(`${ref} connects ${count} nodes, which is not a whole number of ${type.name} ports.${hint}`, head(card));
   }
-  const slots = expandTerminals(form, keywords, pairs, solved);
+  const slots = expandTerminals(form, matched, pairs, solved);
 
   // The tail: what follows the nodes, kept as the value string; a block titled by its master
   // (a subcircuit name) leaves that out of the value, as today.
@@ -708,7 +778,7 @@ function toPart(card: Card, context: Context): Part | undefined {
       title = matched ? keywordName(matched) : letter;
       break;
     case 'keyword-with-arguments':
-      title = matched ? matched.text : letter;
+      title = matched ? keywordTitle(matched) : letter;
       break;
     default:
       title = block.title.fixed;
@@ -751,15 +821,22 @@ function requiredCount(terminals: Terminals): number {
   return count;
 }
 
-/** Every terminal of a form in order, repeat groups unrolled with their counts, `#` replaced by the index. */
-function expandTerminals(form: Form, keywords: ParsedToken[], pairs: ParsedToken[], solved: number | undefined): Slot[] {
+/** Whether a keyword is one of the type's keyword selectors in this dialect. */
+function selectsType(type: ElementType, dialect: DialectId, keyword: string): boolean {
+  return type.spellings.some((spelling) => spelling.dialect === dialect && 'select' in spelling && spelling.select?.by === 'keyword' && spelling.select.keywords.includes(keyword));
+}
+
+/**
+ * Every terminal of a form in order, repeat groups unrolled with their counts, `#` replaced by the
+ * index; `keyword` is the token whose arguments give the counts.
+ */
+function expandTerminals(form: Form, keyword: ParsedToken | undefined, pairs: ParsedToken[], solved: number | undefined): Slot[] {
   const count = (name: string): number => {
     if (/^\d+$/.test(name)) return Number.parseInt(name, 10);
     const source: CountSource | undefined = form.counts?.[name];
     if (source === undefined) return 0;
     if (source === 'solve') return solved ?? 0;
     if ('argument' in source) {
-      const keyword = keywords.find((token) => form.match !== undefined && 'keyword' in form.match && form.match.keyword.includes(keywordName(token)));
       return (keyword && keywordArguments(keyword)[source.argument]) ?? source.default ?? 0;
     }
     const pair = pairs.find((token) => token.key!.toUpperCase() === source.pair.toUpperCase());
@@ -809,9 +886,10 @@ function closedNodeCount(card: Card): number {
   return parsed.tokens.filter((token) => token.line === parsed.line && token.column < close).length;
 }
 
-/** Every spelling of ground becomes `0`; other node names are case-insensitive unless the dialect says otherwise. */
-function normalise(node: string, dialect: DialectId): string {
+/** Every spelling of ground becomes `0`; other node names are case-insensitive unless the dialect says otherwise; PSpice's `[SUB]` is `SUB`. */
+function normalise(name: string, dialect: DialectId): string {
   const rules = DIALECTS[dialect];
+  const node = rules.bracketedNodeNames && /^\[.+\]$/.test(name) ? name.slice(1, -1) : name;
   const lower = node.toLowerCase();
   if (rules.ground.some((spelling) => (rules.caseSensitive ? spelling === node : spelling.toLowerCase() === lower))) return GROUND;
   return rules.caseSensitive ? node : lower;
@@ -827,11 +905,12 @@ function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinR
     case 'subcircuit-ports': {
       const name = nameToken!.text;
       const ports = subcircuits.get(name.toLowerCase());
-      if (ports && ports.length !== nodes.length) {
-        throw new ParseError(`${ref} connects ${nodes.length} nodes, but subcircuit ${name} has ${ports.length} ports.`, at(card, nameToken!));
+      if (ports && (nodes.length < ports.required || nodes.length > ports.names.length)) {
+        const count = ports.required === ports.names.length ? `${ports.names.length} ports` : `${ports.required} to ${ports.names.length} ports`;
+        throw new ParseError(`${ref} connects ${nodes.length} nodes, but subcircuit ${name} has ${count}.`, at(card, nameToken!));
       }
       if (!ports) notes.push(`${capitalise(where(card))}: subcircuit ${name} of ${ref} is not defined here; its pins are numbered.`);
-      return nodes.map((node, index) => ({ name: ports?.[index] ?? String(index + 1), node }));
+      return nodes.map((node, index) => ({ name: ports?.names[index] ?? String(index + 1), node }));
     }
     case 'xspice-ports':
       return xspicePins(nodeTokens, dialect);

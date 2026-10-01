@@ -253,6 +253,20 @@ but not its top-level elements; a `.lib` whose file is not next to the document
 reads it from its own library folder. Expressions as node names (`{n}`) are
 not read.
 
+In `pspice`, netlists are read as PSpice A/D 16.6 reads them: `*`, `;` and `#`
+comment (`$G_DPWR` and `$D_HI` are nodes, `//` is text); `B` is a GaAsFET, `Z`
+an IGBT, `N` and `O` the digital interfaces and `U` a digital primitive whose
+pins follow from its type and arguments (`NAND(2)`, `JKFF(1)`, `PINDLY (5,0,10)`),
+two supply pins first; `E`/`G` take two nodes in their `VALUE`, `TABLE`,
+`LAPLACE`, `FREQ`, `CHEBYSHEV`, `F=` and `Q=` forms and 2 + 2n after `POLY(n)`,
+pairs written `(a,b)` included; a subcircuit's `OPTIONAL:` pins may be left off
+a call from the right, and `PARAMS:`/`TEXT:` end its nodes; `[SUB]` names a
+substrate node; `.MODEL … AKO:ref type` takes the written type and `LPNP` is a
+PNP; `.LIB file` reads a library's models and subcircuits without its top-level
+elements, has no sections, and a `.LIB` whose file is not next to the document
+(or a bare `.LIB`, meaning `nom.lib`) is noted and skipped; `.ALIASES` blocks
+are skipped. Only the first circuit of a file is drawn.
+
 ![An op-amp drawn as a labelled block in an inverting amplifier, and a netlist error pointing at its column](media/screenshots/caption-and-error.jpg)
 
 ## Errors and limits

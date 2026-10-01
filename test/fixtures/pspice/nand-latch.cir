@@ -1,0 +1,37 @@
+* source NAND_LATCH
+* A set-reset latch from two 74LS00 gates driven by digital stimuli, a JK flip-flop, and the
+* analog-digital interfaces PSpice inserts, written out. The 74LS00 subcircuit is RG p.348's,
+* with OPTIONAL: supply pins one call gives and the other leaves to their defaults.
+.LIB "74LS.lib"
+.LIB
+V_VCC        VCC 0 5Vdc
+R_R1         VCC $G_DPWR 1 TC=0,0
+X_U1A        SET  Q    QB  74LS00
+X_U1B        QB   RST  Q   $G_DPWR $G_DGND 74LS00 PARAMS: MNTYMXDLY=2 IO_LEVEL=1
+U_SET        STIM(1,1) $G_DPWR $G_DGND SET IO_STM
++ 0s 1
+* a pulse low, then back high
++ 10ns 0
++ 20ns 1
+U_RST        STIM( 1, 1 ) $G_DPWR $G_DGND RST IO_STM
++ 0s 1
+U_FF         JKFF(1) $G_DPWR $G_DGND $D_HI $D_HI CLK Q QB FQ FQB D_293ASTD IO_STD
+N_IN         A_IN 0 VCC DIN_MOD DGTLNET=Q IO_STD
+O_OUT        A_OUT 0 DOUT_MOD DGTLNET=FQ IO_STD
+U_DLY        PINDLY (1,0,0) $G_DPWR $G_DGND FQ FQ_D IO_STD
++ PINDLY: FQ_D = { DELAY(5ns, 8ns, 12ns) }
+.SUBCKT 74LS00 A B Y
++ OPTIONAL: DPWR=$G_DPWR DGND=$G_DGND
++ PARAMS: MNTYMXDLY=0 IO_LEVEL=0
+U1 NAND(2) DPWR DGND A B Y D_00 IO_STD MNTYMXDLY={MNTYMXDLY} IO_LEVEL={IO_LEVEL}
+.ENDS
+.MODEL DIN_MOD DINPUT (S0NAME="0" S0VLO=-1.5 S0VHI=0.8 S1NAME="1" S1VLO=2.0 S1VHI=7.0)
+.MODEL DOUT_MOD DOUTPUT (S0NAME="0" S0VLO=-1.5 S0VHI=0.8 S1NAME="1" S1VLO=2.0 S1VHI=7.0)
+.TRAN 1ns 100ns
+.PROBE V([A_OUT]) D(Q) D(QB)
+.ALIASES
+X_U1A U1A (A=SET B=Q Y=QB )
+X_U1B U1B (A=QB B=RST Y=Q )
+_ _ (Q=Q QB=QB)
+.ENDALIASES
+.END

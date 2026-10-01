@@ -21,6 +21,16 @@
   resistors; `value=`, `Laplace=` and `tbl=` dependent-source shapes; `.lib file`
   reads a library's models and subcircuits without its top-level elements, and a
   `.lib` of a file that is not here (LTspice's standard libraries) is a note.
+- `dialect="pspice"` reads a fence with a parser generated from the PSpice
+  overlay (`vendor/parsers/pspice.cjs`): `*`, `;` and `#` comment, so `$G_` and
+  `$D_` nodes survive; `B` GaAsFET, `Z` IGBT, `N`/`O` digital interfaces and
+  `U` digital primitives with their type-dependent pins (arguments after blanks
+  allowed); two-node `VALUE`, `TABLE`, `LAPLACE`, `FREQ`, `CHEBYSHEV`, `F=` and
+  `Q=` sources and `POLY(n)` pairs written `(a,b)`; `OPTIONAL:` subcircuit pins
+  left off from the right, `PARAMS:` and `TEXT:`; `[SUB]` substrate names;
+  `AKO:` models; `.LIB file` as a sectionless library, a bare `.LIB` and a missing
+  library as notes; `.ALIASES` blocks skipped. A digital primitive selected by
+  its keyword no longer counts that keyword as a node.
 
 ## 0.1.0 — 2026-09-30
 
