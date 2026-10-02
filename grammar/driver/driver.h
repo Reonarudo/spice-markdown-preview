@@ -10,7 +10,9 @@
 struct scan_state {
   int at_card_start;        /* the next token is a card's head */
   int after_head;           /* the last token was an element head: a `(` here opens its node list */
-  int opaque;               /* inside an opaque region (`.control` … `.endc`): lines are swallowed */
+  int opaque;               /* inside an opaque region (`.control` … `.endc`): lines are swallowed; Spectre: the next `{` opens a block to swallow */
+  int block_depth;          /* Spectre: how many `{` of a swallowed block are open */
+  int block_card_open;      /* Spectre: a card was open when the swallowed block began, and its newline is still owed */
   int ending;               /* the first `.end` was read: what follows is only counted */
   int after_end;            /* non-blank, non-comment lines after the first `.end` */
   int open_line;            /* where the unterminated node list or group opened, for the error */

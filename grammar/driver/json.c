@@ -118,7 +118,7 @@ void json_directive(struct json *j, char *name, int line, int column, int end) {
   for (char *c = name; *c; c++) *c = (char)tolower((unsigned char)*c);
   puts_(j, ",\"name\":"); put_string(j, name);
   put_span(j, line, column, end);
-  j->model = strcmp(name, ".model") == 0;
+  j->model = strcmp(name, ".model") == 0 || strcmp(name, "model") == 0;
   free(name);
 }
 
@@ -144,10 +144,11 @@ void json_token(struct json *j, const char *class, char *text, int line, int col
 
 void json_pair(struct json *j, char *key, char *value, int line, int column, int end_line, int end) {
   if (j->failed || !j->in_card) { free(key); free(value); return; }
+  /* A model card keeps the `level` pair (SPICE) and the `type` pair (Spectre: `type=pnp`, `type=p`) and drops every other parameter. */
   if (j->model) {
     char lowered[8] = "";
-    if (strlen(key) == 5) { memcpy(lowered, key, 6); for (char *c = lowered; *c; c++) *c = (char)tolower((unsigned char)*c); }
-    if (strcmp(lowered, "level") != 0) { free(key); free(value); return; }
+    if (strlen(key) < sizeof lowered) { strcpy(lowered, key); for (char *c = lowered; *c; c++) *c = (char)tolower((unsigned char)*c); }
+    if (strcmp(lowered, "level") != 0 && strcmp(lowered, "type") != 0) { free(key); free(value); return; }
   }
   size_t n = strlen(key) + strlen(value) + 2;
   char *joined = malloc(n);

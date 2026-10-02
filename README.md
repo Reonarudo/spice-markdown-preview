@@ -300,6 +300,29 @@ MVS model (level 2000), four to seven with BSIM-SOI and is a VDMOS at level 18;
 value; `.INCL` and quoted file names are read, `.LIB file entry` reads a section
 and `.LIB file` alone is an error. Only the first circuit of a file is drawn.
 
+In `spectre`, netlists are read as Cadence Spectre reads a `.scs` file: an
+instance is `name (nodes) master param=value …` — the parentheses optional, a
+second `(…)` group allowed — and the master names the part: a primitive
+(`resistor`, `capacitor`, `inductor`, `vsource`, `isource`, `diode`, `bjt`,
+`vbic`, `bsim4` and the other MOS families, `bsimsoi`, `jfet`, `gaas`, `vcvs`,
+`vccs`, `ccvs`, `cccs` and their `p…` forms, `tline`, `mtline`, `relay`,
+`switch`, `iprobe`, `port`, `transformer`, `nport`, `mutual_inductor`), a
+`model` whose master and `type=` decide NPN/PNP and N/P, or a `subckt`,
+`inline subckt` or Verilog-A module, drawn as a block with the definition's
+ports. Names keep their case; `0` is ground, and so is the first name of the
+first `global` statement; `//` and `*` lines and a blank then `//` comment; `\`
+and `+` continue lines, inside `(…)` and `[…]` too. `include "file"`,
+`include "file" section=name` and `#include` are read (a `.scs` file in Spectre,
+any other in SPICE mode), `ahdl_include` is noted; `if … { } else { }` draws
+its first branch; `sweep` and `montecarlo` blocks are read through,
+`statistics`, `paramset` and model bin groups skipped; analyses, `options`,
+`info`, `save`, `ic` and `parameters` draw nothing. `simulator lang=spice`
+switches the rest of the netlist to SPICE mode — element letters, case folded,
+`*spectre:` lines read — until `simulator lang=spectre`, anywhere, inside a
+`subckt` too. Not read: `insensitive=yes`, an inline subckt's inner device (the
+instance is a block), and a `.model` from a SPICE-mode region named by a
+Spectre instance.
+
 ![An op-amp drawn as a labelled block in an inverting amplifier, and a netlist error pointing at its column](media/screenshots/caption-and-error.jpg)
 
 ## Errors and limits

@@ -14,7 +14,7 @@ struct json {
   int in_card;      /* a card is open */
   int tokens_open;  /* the open card's tokens array has started */
   int tokens;       /* tokens written in the open card */
-  int model;        /* the open card is `.model`: keep its bare words and the `level` pair only */
+  int model;        /* the open card is `.model` or Spectre `model`: keep its bare words and the `level` and `type` pairs only */
   int failed;       /* the error was written; nothing else may follow */
 };
 
@@ -29,7 +29,7 @@ void json_element(struct json *j, char *ref, char *head, int line, int column, i
 void json_instance(struct json *j, char *ref, char *master, int line, int column, int end);
 /* The element's node list was parenthesised: say so before its tokens begin. */
 void json_nodes_closed(struct json *j);
-/* Open a directive card; `name` is lower-cased. `.model` cards are trimmed (ADR 0008). */
+/* Open a directive card; `name` is lower-cased. `.model` and Spectre `model` cards are trimmed (ADR 0008). */
 void json_directive(struct json *j, char *name, int line, int column, int end);
 /*
  * A token's span: `line` and `column` where it starts, `end` the exclusive column where it stops on

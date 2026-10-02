@@ -1,0 +1,45 @@
+// BJT ECP oscillator, in the shape of the User Guide's osc.scs (UG p.28), with the Guide's other statement shapes
+simulator lang=spectre
+global 0 vdd!
+include "models.scs"
+include "lib.scs" section=tt
+parameters cc=272.7pF \
+    rb=10k
+Iee (e 0) isource dc=1mA
+Vcc (cc 0) vsource dc=5
+Q1 (cc b1 e) npn
+Q2 (out b2 e) npn
+Q3 (vdd! b2 out) pnpm area=2
+L1 (cc out) inductor l=1uH
+C1 (cc out) capacitor c=1pf
+C2 (out b1) capacitor c=cc
+C3 (b1 0) capacitor c=3nF
+C4 (b2 0) capacitor c=3nF
+R1 (b1 0) resistor r=rb
+R2 b2 0 resistor r=rb // bare nodes: the last positional word is the master
+Rsub (e 0 sub) resistor r=1M
+Gm (out 0)(b1 0) vccs gm=.01
+ml1 mutual_inductor coupling=0.9 ind1=L1 ind2=L2
+L2 (vdd! out) inductor l=2uH
+M1 (vdd! b1 0 0) nch w=1u l=0.1u
+M2 (vdd! b2 0 0) pch_mac w=1u l=0.1u
+Amp1 (b1 b2 out) opamp_x gain=1e3
+ic cc=5
+model npn bjt type=npn bf=80 rb=100 vaf=50 \
+cjs=2pf tf=0.3ns tr=6ns cje=3pf cjc=2pf
+model pnpm bjt
++ type=pnp
++ bf=40
+model nch bsim4 type=n tox=1e-9
+inline subckt pch_mac (d g s b)
+parameters w=1u l=1u
+pch_mac (d g s b) pch w=w l=l
+ends pch_mac
+model pch bsim4 type=p
+statistics {
+  process { vary bf dist=gauss std=0.1 }
+}
+OscResp tran stop=80us maxstep=10ns
+simulatorOptions options reltol=1e-3 temp=27
+finalTimeOP info what=oppoint where=rawfile
+save cc out

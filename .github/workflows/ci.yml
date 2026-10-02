@@ -66,7 +66,7 @@ jobs:
             vendor/parsers
             build/grammars/**/*.c
             build/grammars/**/*.h
-  # Advisory: parses real Xyce, PSpice and HSPICE decks that cannot be committed — Xyce_Regression
+  # Advisory: parses real Xyce, PSpice, HSPICE and Spectre decks that cannot be committed — Xyce_Regression
   # states no licence (Redmine #1190) — with the vendored modules at a pinned commit, and reports
   # every structural error (scripts/corpus.ts). A failure here never blocks a merge; it says an
   # overlay has a gap.
@@ -91,6 +91,8 @@ jobs:
           git checkout -q FETCH_HEAD
       - run: node --import tsx scripts/corpus.ts --dialect pspice --ext .pspice,.net,.lib --title .pspice "$RUNNER_TEMP/xyce-regression/Netlists/XDM/PSPICE"
       - run: node --import tsx scripts/corpus.ts --dialect hspice --ext .cir,.net,.lib --title .cir,.net "$RUNNER_TEMP/xyce-regression/Netlists/XDM/HSPICE"
+      # Virtuoso-exported Spectre decks (their first lines are `//` comments, not a title) and a `.scs` model file.
+      - run: node --import tsx scripts/corpus.ts --dialect spectre --ext .cir.spectre,.scs "$RUNNER_TEMP/xyce-regression/Netlists/XDM/SPECTRE"
       # Native Xyce decks: every .cir outside XDM and outside the directories that hold Xyce's own
       # error-message tests, which are malformed on purpose — and five decks that never close a
       # `(` (SENS/*vsin.cir, MEXTRAM/FGummel_Ib_noFlip_P_TRANS.cir) or a `{` on purpose

@@ -11,7 +11,10 @@
  * fragments to leave out (a simulator's own error-message tests are malformed on purpose);
  * `--tolerate` lists error codes that are reported but do not fail the run. Every file is parsed
  * by the module (ADR 0008) and then read end to end by `parseNetlist`, with no included files. A
- * structural error from the module fails the run; a reader error is listed for information.
+ * structural error from the module fails the run; a reader error is listed for information. A
+ * Spectre deck (`--dialect spectre`) is parsed through `parseNetlist`'s region splitting too, but
+ * the structural check runs its text through the native module alone, so `simulator lang=spice`
+ * regions are checked by the reader step rather than here.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -20,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import type { DialectId } from '../src/catalogue/types';
 import { parseNetlist } from '../src/netlist';
 import { loadParser, parse, type ParserFactory } from '../src/parser/registry';
+import { modulesFor } from '../src/parser/regions';
 
 interface Options {
   dialect: DialectId;
@@ -62,8 +66,10 @@ function files(root: string, extensions: string[], except: string[]): string[] {
 async function main(): Promise<void> {
   const { dialect, extensions, titled, except, tolerated, roots } = options(process.argv.slice(2));
   const require = createRequire(import.meta.url);
-  const vendored = fileURLToPath(new URL(`../vendor/parsers/${dialect}.cjs`, import.meta.url));
-  await loadParser(dialect, require(vendored) as ParserFactory);
+  // A Spectre deck may switch to SPICE mode, so `parseNetlist` needs both of its modules.
+  for (const module of modulesFor(dialect)) {
+    await loadParser(module, require(fileURLToPath(new URL(`../vendor/parsers/${module}.cjs`, import.meta.url))) as ParserFactory);
+  }
 
   let structural = 0;
   let tolerable = 0;

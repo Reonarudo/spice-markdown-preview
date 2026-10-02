@@ -1,0 +1,29 @@
+// Two languages in one netlist, as Spectre's SPICE converter writes them (UG p.47, 53–54)
+simulator lang=spectre insensitive=yes
+global 0
+V1 (In 0) vsource dc=1
+R1 (In Mid) resistor r=1k
+X1 (Mid Out) rc_stage rval=2K
+simulator lang=spice
+* SPICE mode: element letters, case folded, Spectre parameters appended
+C1 out 0 1u m=2
+D1 OUT 0 dmod
+.model dmod d is=1e-14
+*spectre: Rload out 0 1k
+.subckt rc_stage in out
+R1 in out 1k
+simulator lang=spectre
+C2 (out 0) capacitor c=1u
+simulator lang=spice
+.ends rc_stage
+simulator lang=spectre
+if (rval > 1k) {
+  Rsel (Out 0) resistor r=rval
+} else {
+  Rsel (Out 0) resistor r=1
+}
+swp sweep param=temp values=[25 75 100] {
+  op1 dc
+  tran1 tran stop=1u
+}
+tran tran stop=1u

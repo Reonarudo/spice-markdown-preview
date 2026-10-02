@@ -47,10 +47,11 @@ const FIXTURES: Partial<Record<DialectId, Fixture>> = {
   hspice: SPICE_FIXTURE,
   xyce: SPICE_FIXTURE,
   'spectre-spice': SPICE_FIXTURE,
+  // A `model` card is trimmed to its name, master and `type` pair; a `[…]` group may close on a `+` line; `=` opens no statement.
   spectre: {
-    text: 'r1 (in out) resistor r=10k\n',
-    cards: [{ kind: 'element', ref: 'r1', master: 'resistor' }],
-    tokens: [['in', 'out', 'r=10k']],
+    text: 'r1 (in out) resistor r=10k\nmodel npn bjt type=npn bf=80\nv1 (in 0) vsource type=pwl wave=[0 0\n+ 1m 5]\n',
+    cards: [{ kind: 'element', ref: 'r1', master: 'resistor' }, { kind: 'directive', name: 'model' }, { kind: 'element', ref: 'v1', master: 'vsource' }],
+    tokens: [['in', 'out', 'r=10k'], ['npn', 'bjt', 'type=npn'], ['in', '0', 'type=pwl', 'wave=[0 0 1m 5]']],
     broken: 'r1 (in out) resistor r=10k\n= 1\n',
     brokenFound: '='
   }

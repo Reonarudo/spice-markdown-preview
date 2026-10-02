@@ -64,10 +64,11 @@ export function checkToken(token: Token, lines: string[], label: string): void {
     assert.equal(joined(lines[token.line - 1]!.slice(token.column, token.end)), token.text, `${label}: ${token.class} "${token.text}" at ${where}`);
     return;
   }
-  // Continued across `+` lines: the text starts with the first line's piece, ends with the last line's piece
-  // after its `+`, and joins the pieces with one blank where the break was. The lines between are not part of it.
-  const head = joined(lines[token.line - 1]!.slice(token.column)).trimEnd();
-  const tail = lines[token.endLine - 1]!.slice(0, token.end).replace(/^\s*\+\s*/, '');
+  // Continued across lines — a `+` line, or (Spectre) a line ending in `\`: the text starts with the first line's
+  // piece without the backslash, ends with the last line's piece after its `+`, and joins the pieces with one blank
+  // where the break was. The lines between are not part of it.
+  const head = joined(lines[token.line - 1]!.slice(token.column)).replace(/\s*\\\s*$/, '').trimEnd();
+  const tail = lines[token.endLine - 1]!.slice(0, token.end).replace(/^\s*\+\s*/, '').trimStart();
   assert.ok(token.text.startsWith(head), `${label}: ${token.class} "${token.text}" at ${where} starts with "${head}"`);
   assert.ok(token.text.endsWith(tail), `${label}: ${token.class} "${token.text}" at ${where} ends with "${tail}" on line ${token.endLine}`);
   // A pair split at its `=` (`r=` then `+ 1k`) joins directly; a group's pieces are joined by one blank.

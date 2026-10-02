@@ -87,6 +87,10 @@ async function dialects(render) {
   await settled(render, fence('spice {dialect="hspice"}', 'M1 out in GND! nch W=1u L=1u$no bulk\nR1 out vdd! 1k\nV1 vdd! 0 1.8\n.MODEL nch.1 NMOS'), /<svg class="spice"/);
   // Xyce: an indented line is a comment, `gnd` is ground only under REPLACEGROUND, and a `Y<type> name` device draws as a block.
   await settled(render, fence('spice {dialect="xyce"}', '.PREPROCESS REPLACEGROUND TRUE\n   R9 a b 1k\nYMEMRISTOR mr1 in gnd mrm\nR1 $GVDD in 1k\nV1 $GVDD 0 1\n.MODEL mrm memristor'), /<svg class="spice"/);
+  // Spectre: `name (nodes) master param=value`, a model's `type=` deciding PNP, and a switch to SPICE mode and back, both modules loaded.
+  const spectre = await settled(render, fence('spice {dialect="spectre"}', 'Q1 (c b e) pnpm\nR1 (c vdd!) resistor r=1k\nsimulator lang=spice\nV1 vdd! 0 5\nsimulator lang=spectre\nmodel pnpm bjt type=pnp'), /<svg class="spice"/);
+  assert.match(spectre, PNP_ARROW, 'the model statement\'s type=pnp is read');
+  assert.match(spectre, />pnpm<\/text>/);
   // A dialect whose parser is not vendored yet proves the name travels: the worker reports it.
   // The host loads a dialect's parser at its first fence, so the first render may still be loading.
   const vendored = await fs.readdir(path.join(vscode.extensions.getExtension('ReoX86.spice-schematic-preview').extensionPath, 'vendor', 'parsers'));

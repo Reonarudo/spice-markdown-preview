@@ -1,33 +1,38 @@
 /**
  * Where the worker finds a dialect's generated parser: `<directory>/<dialect>.cjs`, the modules
  * `scripts/grammars.sh` vendors (ADR 0008). Each is `require`d and handed to the registry the
- * first time a fence in its dialect arrives, so a dialect that is never used is never loaded.
+ * first time a fence in its dialect arrives, so a dialect that is never used is never loaded. A
+ * Spectre fence needs two: its netlist may switch to SPICE mode (`src/parser/regions.ts`).
  */
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import type { DialectId } from '../catalogue/types';
 import { DIALECTS } from '../catalogue/dialects';
 import { loadParser, type ParserFactory } from './registry';
+import { modulesFor } from './regions';
 
 /**
  * A loader for the modules in `directory` — `dist/../vendor/parsers` in the packaged extension.
  * The returned function resolves once the dialect parses synchronously through the registry, and
- * rejects — never throws — with one sentence naming the dialect and why. Both outcomes are kept,
+ * rejects — never throws — with one sentence naming the module and why. Both outcomes are kept,
  * so every fence after the first costs a lookup, and a module that would not load is not asked
  * again: it will not appear while the process runs.
  */
 export function parserLoader(directory: string): (dialect: DialectId) => Promise<void> {
   const require = createRequire(join(directory, 'index.cjs'));
   const outcomes = new Map<DialectId, Promise<void>>();
-  return (dialect) => {
-    let outcome = outcomes.get(dialect);
+  const one = (module: DialectId): Promise<void> => {
+    let outcome = outcomes.get(module);
     if (!outcome) {
-      outcome = load(dialect).catch((error: unknown) => {
-        throw new Error(`The ${dialect} parser could not be loaded: ${reason(error)}`);
+      outcome = load(module).catch((error: unknown) => {
+        throw new Error(`The ${module} parser could not be loaded: ${reason(error)}`);
       });
-      outcomes.set(dialect, outcome);
+      outcomes.set(module, outcome);
     }
     return outcome;
+  };
+  return async (dialect) => {
+    for (const module of modulesFor(dialect)) await one(module);
   };
 
   async function load(dialect: DialectId): Promise<void> {

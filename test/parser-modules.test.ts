@@ -30,6 +30,13 @@ test('loading a vendored dialect makes the registry parse it synchronously', asy
   assert.equal(parse('ngspice', 'R1 a b 1k\n').cards.length, 1);
 });
 
+test('loading spectre loads its SPICE mode too, since a Spectre netlist may switch languages', async () => {
+  const load = parserLoader(VENDORED);
+  await load('spectre');
+  assert.equal(parse('spectre', 'r1 (a b) resistor r=1k\n').cards.length, 1);
+  assert.equal(parse('spectre-spice', 'R1 a b 1k\n').cards.length, 1);
+});
+
 test('a dialect with no module in the directory is reported, naming the dialect, without throwing synchronously', async () => {
   const load = parserLoader(fakeParsers());
   let promise!: Promise<void>;

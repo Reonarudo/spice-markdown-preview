@@ -1,21 +1,25 @@
 {
   "tools": { "bison": "3.8.2", "flex": "2.6.4", "emscripten": "6.0.9" },
   "script": "scripts/grammars.sh",
-  "modules": ["hspice.cjs", "ltspice.cjs", "ngspice.cjs", "pspice.cjs", "xyce.cjs"],
+  "modules": ["hspice.cjs", "ltspice.cjs", "ngspice.cjs", "pspice.cjs", "spectre-spice.cjs", "spectre.cjs", "xyce.cjs"],
   "inputs": {
     "grammar/driver/driver.c": "224c7b99611d18df1e1da6e91aca2ba4ec245b1ba3df03c7a57629a66fb87e44",
-    "grammar/driver/json.c": "b1a6609876a72ec80d6d0394d297a0b09f67294aa4f5d06f5e84665a8095934a",
-    "grammar/driver/driver.h": "ee107724cde56b918f416765e49c6d285b52bc46cf5a7a7b2a4fa30c13fccd22",
-    "grammar/driver/json.h": "94784e507bffca6c28a7321af7a9abaa2878f2fff0f8205a65427ead1f3851b5",
+    "grammar/driver/json.c": "5a81656a1a88f8475ab4a6e277c3c24d20d13041984058985c9e5947c00761c9",
+    "grammar/driver/driver.h": "805e8ff36a673e0cb0883cc996d0e3109d44e298db1b52528abca9084d0318e2",
+    "grammar/driver/json.h": "1684fb9e61cedcbb59f605905fc60765a579020543ea800c76d7415407790182",
     "grammar/generated/hspice.l": "e46a9192e495c867e49c94dc0b97a9760c6d96cef62633b7256b17431a13d219",
     "grammar/generated/ltspice.l": "da4a3187764967d318baf0e10b56cd687cdd3f608f6bd07bc8126980274feb90",
     "grammar/generated/ngspice.l": "244f14555bc43f1677ad9c59f112b30109f07c8bc4798ff67375e2c8296dfde1",
     "grammar/generated/pspice.l": "7493154ab7533f13fd6753adc1690004fb7b088055320c42dc32a08f75a3e679",
+    "grammar/generated/spectre-spice.l": "b1be45a9aea20b29df599f0327d1fea97542fb066fbb9daa1ba24d2aec592f1c",
+    "grammar/generated/spectre.l": "b23d79393cd091ecbdcdab6e04769b0cc78bf4edd9b8a541416551b11b1b04b9",
     "grammar/generated/xyce.l": "b109c2f62348e4d31384908985594d283985b1897eb997122c387810214db035",
     "grammar/generated/hspice.y": "fec80d9da0eccf151958d69ae72ed056d603d5e584eade84b1dfd739ebe5e66c",
     "grammar/generated/ltspice.y": "0e16191ee082dec2e69aa386a96747ba85c32e74ea26961cc6a18526f724dd54",
     "grammar/generated/ngspice.y": "d7e45e83eed5a84955beafbd853b4a51f227dfdb9fc7e19a4dd74e2ecba1a95a",
     "grammar/generated/pspice.y": "e69733d20f3b1917a2f1712f2781c53423fe3e1a9d8363a6deb76c53837a1ecb",
+    "grammar/generated/spectre-spice.y": "18d6473bde99ac1fa8d136f0d3f65dde680c599aa6655f1ae2c73797ac300fab",
+    "grammar/generated/spectre.y": "fc7c7ae0ee434c45f05e85e7699eb47a893797f18348b917e49ebfa4345abd4e",
     "grammar/generated/xyce.y": "fabdd2fa17309b024bc71f5289d71b2f75500d7aa486d437cad2249a6ab62f89"
   }
 }

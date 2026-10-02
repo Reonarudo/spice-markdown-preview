@@ -53,6 +53,18 @@
   and level-18 VDMOS `M`; `[SUB]` substrate names; a model before a passive's
   value; `.INCL` and quoted file names; `.LIB file entry` only. The advisory
   `corpus` CI job also parses Xyce_Regression's native decks.
+- `dialect="spectre"` reads a fence with parsers generated from a second base
+  grammar for Cadence Spectre's own language (`vendor/parsers/spectre.cjs`) and
+  from an overlay for its SPICE mode (`spectre-spice.cjs`), switched by
+  `simulator lang=` anywhere in the netlist: `name (nodes) master param=value`
+  instances, the master naming the part directly, through a `model` statement
+  whose `type=` decides polarity, or as a subcircuit; case-sensitive names;
+  `global`'s first name as ground; `//` comments, `\` and `+` continuation;
+  `include "file" [section=name]` and `#include`, `.scs` files in Spectre and
+  others in SPICE mode; `if`/`else` blocks read like `.if`, `sweep` blocks read
+  through, `statistics` and model bin groups skipped; analyses skipped by their
+  master; `*spectre:` lines in SPICE mode. A model card now keeps its `type`
+  pair in every dialect, so every vendored module was rebuilt.
 
 ## 0.1.0 — 2026-09-30
 
