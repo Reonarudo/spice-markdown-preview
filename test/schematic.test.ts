@@ -2,18 +2,20 @@ import { before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import ELK from 'elkjs/lib/elk.bundled.js';
-import { parseNetlist, GROUND, type Netlist } from '../src/netlist';
+import { parseNetlist, GROUND, type Netlist, type Part } from '../src/netlist';
 import { blockSymbol, labelBox, layoutSchematic, loadSymbols, labelText, MAX_LABEL, type Schematic } from '../src/schematic';
 import { loadNgspice } from './helpers/ngspice';
+import { loadLtspice } from './helpers/ltspice';
+import { loadPspice } from './helpers/pspice';
 
-before(loadNgspice);
+before(async () => { await loadNgspice(); await loadLtspice(); await loadPspice(); });
 
 const symbols = loadSymbols(readFileSync('src/skin/symbols.svg', 'utf8'));
 const elk = new ELK();
 const layout = (graph: Parameters<typeof elk.layout>[0]) => elk.layout(graph);
 
-function netlist(source: string): Netlist {
-  const result = parseNetlist(source);
+function netlist(source: string, dialect?: Parameters<typeof parseNetlist>[2]): Netlist {
+  const result = parseNetlist(source, undefined, dialect);
   if (!result.ok) assert.fail(result.message);
   return result.netlist;
 }
@@ -47,19 +49,20 @@ function drawnConnectivity(schematic: Schematic): Map<string, string> {
     for (const [name, pin] of item.symbol.pins) {
       const at = { x: item.x + pin.x, y: item.y + pin.y };
       const segment = segments.findIndex(([a, b]) => onSegment(at, a, b));
-      group.set(`${item.part?.ref ?? `ground${index}`}.${name}`, segment === -1 ? `open:${key(at)}` : `wire:${find(segment)}`);
+      const owner = item.part?.ref ?? (item.label !== undefined ? `label ${item.label} ${index}` : `ground${index}`);
+      group.set(`${owner}.${name}`, segment === -1 ? `open:${key(at)}` : `wire:${find(segment)}`);
     }
   });
   return group;
 }
 
 /** Assert that the drawing connects exactly the pins the netlist connects. */
-function assertFaithful(schematic: Schematic): void {
+function assertFaithful(schematic: Schematic, circuit: Netlist): void {
   const drawn = drawnConnectivity(schematic);
   const byNode = new Map<string, string[]>();
   for (const item of schematic.placed) {
     for (const pin of item.part?.pins ?? []) {
-      if (!item.symbol.pins.has(pin.name) || pin.node === GROUND) continue;
+      if (!item.symbol.pins.has(pin.name) || pin.node === GROUND || circuit.globals.includes(pin.node)) continue;
       const list = byNode.get(pin.node) ?? [];
       list.push(`${item.part!.ref}.${pin.name}`);
       byNode.set(pin.node, list);
@@ -75,15 +78,25 @@ function assertFaithful(schematic: Schematic): void {
     assert.equal(groups.get(only!), undefined, `nodes ${groups.get(only!)} and ${node} are drawn connected`);
     groups.set(only!, node);
   }
-  // Every connection to ground ends at a ground symbol of its own.
+  // A hidden pin is unused, not missing: it is neither drawn nor wired.
   for (const item of schematic.placed) {
     for (const pin of item.part?.pins ?? []) {
-      if (pin.node !== GROUND || !item.symbol.pins.has(pin.name)) continue;
+      if (!pin.hidden) continue;
+      assert.ok(!item.symbol.pins.has(pin.name), `${item.part!.ref}.${pin.name} is hidden but drawn`);
+    }
+  }
+  // Every connection to ground ends at a ground symbol of its own, and every connection to a global
+  // node at a net label of its own naming that node.
+  for (const item of schematic.placed) {
+    for (const pin of item.part?.pins ?? []) {
+      if (!item.symbol.pins.has(pin.name)) continue;
+      const tag = pin.node === GROUND ? 'ground' : circuit.globals.includes(pin.node) ? `label ${pin.node} ` : undefined;
+      if (tag === undefined) continue;
       const group = drawn.get(`${item.part!.ref}.${pin.name}`)!;
-      const grounds = [...drawn].filter(([name, g]) => g === group && name.startsWith('ground'));
-      assert.equal(grounds.length, 1, `${item.part!.ref}.${pin.name} reaches ${grounds.length} ground symbols`);
-      assert.ok(![...drawn].some(([name, g]) => g === group && !name.startsWith('ground') && name !== `${item.part!.ref}.${pin.name}`),
-        `${item.part!.ref}.${pin.name} shares its ground with another pin`);
+      const ends = [...drawn].filter(([name, g]) => g === group && name.startsWith(tag));
+      assert.equal(ends.length, 1, `${item.part!.ref}.${pin.name} reaches ${ends.length} ${tag.trim()} symbols`);
+      assert.ok(![...drawn].some(([name, g]) => g === group && !name.startsWith(tag) && name !== `${item.part!.ref}.${pin.name}`),
+        `${item.part!.ref}.${pin.name} shares its ${tag.trim()} with another pin`);
     }
   }
 }
@@ -100,7 +113,8 @@ const circuits: Record<string, string> = {
 
 for (const [name, source] of Object.entries(circuits)) {
   test(`${name}: every node drawn connects exactly its pins`, async () => {
-    assertFaithful(await layoutSchematic(netlist(source), symbols, layout));
+    const circuit = netlist(source);
+    assertFaithful(await layoutSchematic(circuit, symbols, layout), circuit);
   });
 }
 
@@ -175,6 +189,72 @@ test('every pin in the symbol file sits on the edge of its symbol it faces, so w
           : pin.side === 'left' ? pin.x === 0
             : pin.x === symbol.width;
       assert.ok(onEdge, `${type}.${name} at ${pin.x},${pin.y} is not on its ${pin.side} edge`);
+    }
+  }
+});
+
+test('a block puts each pin on the edge its catalogue side names, supplies on top and bottom', () => {
+  const part: Part = {
+    ref: 'U1', type: 'digital-gate', kind: 'block', title: 'NAND(2)', value: 'T1 IO', line: 1,
+    pins: [
+      { name: 'DPWR', node: '$g_dpwr', side: 'top' },
+      { name: 'DGND', node: '$g_dgnd', side: 'bottom' },
+      { name: 'in1', node: 'a', side: 'left' },
+      { name: 'in2', node: 'b', side: 'left' },
+      { name: 'out', node: 'y', side: 'right' }
+    ]
+  };
+  const block = blockSymbol(part);
+  const at = (name: string) => block.pins.get(name)!;
+  assert.deepEqual([...block.pins].map(([name, pin]) => [name, pin.side]), [['DPWR', 'top'], ['DGND', 'bottom'], ['in1', 'left'], ['in2', 'left'], ['out', 'right']]);
+  assert.equal(at('DPWR').y, 0);
+  assert.equal(at('DGND').y, block.height);
+  assert.ok(at('DPWR').x > 0 && at('DPWR').x < block.width);
+  assert.equal(at('in1').x, 0);
+  assert.equal(at('in2').x, 0);
+  assert.ok(at('in2').y > at('in1').y);
+  assert.equal(at('out').x, block.width);
+});
+
+test('an LTspice A function draws only the pins not tied to its common, and the drawing stays faithful', async () => {
+  const circuit = netlist('V1 a 0 1\nV2 b 0 1\nA1 a b 0 0 0 y 0 0 AND\nR1 y 0 1k', 'ltspice');
+  const schematic = await layoutSchematic(circuit, symbols, layout);
+  const gate = schematic.placed.find((item) => item.part?.ref === 'A1')!;
+  assert.deepEqual([...gate.symbol.pins.keys()], ['8', '1', '2', '6']);
+  assertFaithful(schematic, circuit);
+});
+
+test('each connection to a global node ends at a net label of its own, naming the node', async () => {
+  const circuit = netlist('R1 $G_VDD out 1k\nR2 out 0 1k\nR3 $G_VDD x 1k\nR4 x 0 1k\nR5 x y 1k', 'ltspice');
+  const schematic = await layoutSchematic(circuit, symbols, layout);
+  const labels = schematic.placed.filter((item) => item.label !== undefined);
+  assert.deepEqual(labels.map((item) => item.label), ['$g_vdd', '$g_vdd']);
+  assert.ok(labels.every((item) => item.part === undefined && item.symbol.type.startsWith('netlabel')));
+  assertFaithful(schematic, circuit);
+});
+
+test('a digital gate on global supplies: supply pins on the top and bottom edges reach net labels there, nothing overlaps', async () => {
+  const circuit = netlist('V1 a 0 5\nV2 b 0 5\nU1 NAND(2) $G_DPWR $G_DGND a b y T1 IO_STD\nR1 y 0 1k\n.global $G_DPWR', 'pspice');
+  const schematic = await layoutSchematic(circuit, symbols, layout);
+  const gate = schematic.placed.find((item) => item.part?.ref === 'U1')!;
+  assert.equal(gate.symbol.pins.get('DPWR')!.side, 'top');
+  assert.equal(gate.symbol.pins.get('DGND')!.side, 'bottom');
+  const labels = schematic.placed.filter((item) => item.label !== undefined);
+  assert.deepEqual(labels.map((item) => item.label).sort(), ['$g_dgnd', '$g_dpwr']);
+  // The label above the gate hangs its pin downward; the one below points up.
+  const above = labels.find((item) => item.label === '$g_dpwr')!;
+  const below = labels.find((item) => item.label === '$g_dgnd')!;
+  assert.ok(above.y < gate.y, 'DPWR label sits above the gate');
+  assert.ok(below.y > gate.y, 'DGND label sits below the gate');
+  assertFaithful(schematic, circuit);
+  const boxes = schematic.placed.map((item) => {
+    const box = labelBox(item.symbol, item.part, item.label);
+    return { name: item.part?.ref ?? item.label ?? item.symbol.type, left: item.x + box.left, right: item.x + box.right, top: item.y + box.top, bottom: item.y + box.bottom };
+  });
+  for (const [i, a] of boxes.entries()) {
+    for (const b of boxes.slice(i + 1)) {
+      const overlap = a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5;
+      assert.ok(!overlap, `${a.name} overlaps ${b.name}`);
     }
   }
 });

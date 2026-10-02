@@ -7,7 +7,7 @@
  * of schematics can share a preview.
  */
 import { DOMImplementation, XMLSerializer, type Document, type Element } from '@xmldom/xmldom';
-import { labelText, type Placed, type Schematic } from './schematic';
+import { labelText, labelTextFor, type Placed, type Schematic } from './schematic';
 
 const SVG = 'http://www.w3.org/2000/svg';
 /** Room around the drawing, so strokes at the edge are not clipped. */
@@ -49,12 +49,11 @@ function symbol(document: Document, item: Placed): Element {
   for (const text of Array.from(group.getElementsByTagName('text'))) {
     const attribute = text.getAttribute('s:attribute');
     text.removeAttribute('s:attribute');
-    const value = attribute === 'ref' ? item.part?.ref : attribute === 'value' ? item.part?.value : undefined;
-    if (attribute && !value) {
-      text.parentNode!.removeChild(text);
-    } else if (value) {
-      text.textContent = labelText(value);
-    }
+    if (!attribute) continue;
+    const entry = item.symbol.labels.find((label) => label.attribute === attribute);
+    const value = entry ? labelTextFor(entry, item.part, item.label) : '';
+    if (value) text.textContent = value;
+    else text.parentNode!.removeChild(text);
   }
   group.setAttribute('transform', `translate(${number(item.x)},${number(item.y)})`);
   return group;
@@ -78,12 +77,17 @@ function block(document: Document, item: Placed): Element {
     node.textContent = content;
     group.appendChild(node);
   };
-  if (part?.title) text(labelText(part.title), shape.width / 2, 13, 'nodelabel title');
-  if (part?.ref) text(part.ref, shape.width / 2, -4, 'nodelabel');
-  if (part?.value) text(labelText(part.value), shape.width / 2, shape.height + 12, 'nodelabel');
+  for (const label of shape.labels) {
+    const content = labelTextFor(label, part, item.label);
+    if (!content) continue;
+    const anchor = label.anchor === 'end' ? 'endlabel' : label.anchor === 'middle' ? 'nodelabel' : '';
+    text(content, label.x, label.y, `${anchor}${label.attribute === 'title' ? ' title' : ''}`.trim());
+  }
   for (const [name, pin] of shape.pins) {
     if (pin.side === 'left') text(name, pin.x + 4, pin.y + 3, 'pinlabel');
-    else text(name, pin.x - 4, pin.y + 3, 'pinlabel endlabel');
+    else if (pin.side === 'right') text(name, pin.x - 4, pin.y + 3, 'pinlabel endlabel');
+    else if (pin.side === 'top') text(name, pin.x, pin.y + 11, 'pinlabel nodelabel');
+    else text(name, pin.x, pin.y - 4, 'pinlabel nodelabel');
   }
   return group;
 }

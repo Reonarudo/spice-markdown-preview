@@ -9,9 +9,9 @@
  */
 import { DOMParser, type Element } from '@xmldom/xmldom';
 import type { ElkNode, ElkExtendedEdge, ElkPoint, LayoutOptions } from 'elkjs/lib/elk-api';
-import { GROUND, type Kind, type Netlist, type Part } from './netlist';
+import { GROUND, type Kind, type Netlist, type Part, type Pin, type Side } from './netlist';
 
-export type Side = 'top' | 'bottom' | 'left' | 'right';
+export type { Side };
 
 export interface SymbolPin {
   x: number;
@@ -27,15 +27,17 @@ export interface SchematicSymbol {
   pins: Map<string, SymbolPin>;
   /** The `<g>` to clone when drawing; null for a block, which is drawn in code. */
   template: Element | null;
-  /** Where the symbol's `ref` and `value` texts sit, for reserving room around it. */
-  labels: { attribute: 'ref' | 'value'; x: number; y: number; anchor: 'start' | 'middle' | 'end' }[];
+  /** Where the symbol's `ref` and `value` texts sit, for reserving room around it; a block's `title` and a net label's `net` too. */
+  labels: { attribute: 'ref' | 'value' | 'title' | 'net'; x: number; y: number; anchor: 'start' | 'middle' | 'end' }[];
 }
 
 export type Symbols = Map<string, SchematicSymbol>;
 
-/** A symbol placed on the page. */
+/** A symbol placed on the page: a part's, a ground symbol's, or a net label's with the node it names. */
 export interface Placed {
   part: Part | undefined;
+  /** For a net label: the global node's name. */
+  label?: string;
   symbol: SchematicSymbol;
   x: number;
   y: number;
@@ -65,6 +67,8 @@ export const MAX_LABEL = 24;
 /** Block geometry: pins are this far apart, and the box keeps this much room for its title. */
 const BLOCK_PITCH = 20;
 const BLOCK_HEADER = 18;
+/** The row a block adds inside its top or bottom edge when pins sit there, for their names. */
+const BLOCK_PIN_ROOM = 14;
 
 const LAYOUT: LayoutOptions = {
   'org.eclipse.elk.algorithm': 'layered',
@@ -112,7 +116,7 @@ export function loadSymbols(svg: string): Symbols {
         });
       }
       const attribute = node.getAttribute('s:attribute');
-      if (node.tagName === 'text' && (attribute === 'ref' || attribute === 'value')) {
+      if (node.tagName === 'text' && (attribute === 'ref' || attribute === 'value' || attribute === 'net')) {
         const anchor = node.getAttribute('class')?.includes('endlabel') ? 'end' : 'start';
         labels.push({ attribute, x: Number(node.getAttribute('x')), y: Number(node.getAttribute('y')), anchor });
       }
@@ -126,7 +130,7 @@ export function loadSymbols(svg: string): Symbols {
       labels
     });
   }
-  for (const type of [...Object.values(KIND_TO_TYPE), 'nmos3', 'pmos3', 'gnd']) {
+  for (const type of [...Object.values(KIND_TO_TYPE), 'nmos3', 'pmos3', 'gnd', 'netlabel', 'netlabel-down']) {
     if (!symbols.has(type)) throw new Error(`symbols.svg has no ${type} symbol.`);
   }
   return symbols;
@@ -138,49 +142,71 @@ export function labelText(text: string): string {
 }
 
 /**
- * A block's symbol, built to fit: pins split between the left and right sides in netlist order,
- * the box wide enough for its title and pin names.
+ * A block's symbol, built to fit: pins on the edge the catalogue's side names — supplies on the top
+ * and bottom, inputs left, outputs right — and pins the netlist names by position split between
+ * left and right in netlist order; the box wide enough for its title and pin names, and a row taller
+ * at the top or bottom when pins sit there, so their names fit inside.
  */
 export function blockSymbol(part: Part): SchematicSymbol {
-  const left = part.pins.slice(0, Math.ceil(part.pins.length / 2));
-  const right = part.pins.slice(left.length);
-  const widest = (pins: typeof left) => Math.max(0, ...pins.map((pin) => pin.name.length * CHAR_WIDTH));
+  const drawn = part.pins.filter((pin) => !pin.hidden);
+  const unsided = drawn.filter((pin) => pin.side === undefined);
+  const firstHalf = unsided.slice(0, Math.ceil(unsided.length / 2));
+  const on = (side: Side) => drawn.filter((pin) => pin.side === side);
+  const left = [...on('left'), ...firstHalf];
+  const right = [...on('right'), ...unsided.slice(firstHalf.length)];
+  const top = on('top');
+  const bottom = on('bottom');
+  const widest = (pins: Pin[]) => Math.max(0, ...pins.map((pin) => pin.name.length * CHAR_WIDTH));
   const title = labelText(part.title ?? '');
-  // As wide as its title, its pin names side by side, and the name and value above and below it,
-  // so that no label reaches past a pin.
+  const refWidth = part.ref.length * CHAR_WIDTH;
+  const valueWidth = labelText(part.value).length * CHAR_WIDTH;
+  // The name sits above the box and the value below it. Where pins leave through that edge, the
+  // text keeps the left part of the edge and the pins share the rest, so no lead crosses it.
+  const topRoom = top.length > 0 && part.ref ? refWidth + 6 : 0;
+  const bottomRoom = bottom.length > 0 && part.value ? valueWidth + 6 : 0;
+  const pitch = (pins: Pin[]) => Math.max(BLOCK_PITCH, widest(pins) + CHAR_WIDTH);
+  // As wide as its title, its pin names side by side, the name and value above and below it, and
+  // its top and bottom pins with their names, so that no label reaches past a pin or the box.
   const width = Math.max(
     40,
     title.length * CHAR_WIDTH + 12,
     widest(left) + widest(right) + 20,
-    part.ref.length * CHAR_WIDTH,
-    labelText(part.value).length * CHAR_WIDTH
+    refWidth,
+    valueWidth,
+    topRoom + top.length * pitch(top),
+    bottomRoom + bottom.length * pitch(bottom)
   );
+  const header = top.length > 0 ? BLOCK_PIN_ROOM : 0;
+  const footer = bottom.length > 0 ? BLOCK_PIN_ROOM : 0;
   const rows = Math.max(left.length, right.length, 1);
-  const height = BLOCK_HEADER + rows * BLOCK_PITCH;
+  const height = header + BLOCK_HEADER + rows * BLOCK_PITCH + footer;
   const pins = new Map<string, SymbolPin>();
-  left.forEach((pin, index) => pins.set(pin.name, { x: 0, y: BLOCK_HEADER + BLOCK_PITCH / 2 + index * BLOCK_PITCH, side: 'left' }));
-  right.forEach((pin, index) => pins.set(pin.name, { x: width, y: BLOCK_HEADER + BLOCK_PITCH / 2 + index * BLOCK_PITCH, side: 'right' }));
-  return {
-    type: 'block',
-    width,
-    height,
-    pins,
-    template: null,
-    labels: [{ attribute: 'ref', x: width / 2, y: -4, anchor: 'middle' }, { attribute: 'value', x: width / 2, y: height + 12, anchor: 'middle' }]
-  };
+  const row = (index: number) => header + BLOCK_HEADER + BLOCK_PITCH / 2 + index * BLOCK_PITCH;
+  const column = (index: number, count: number, from: number) => from + ((width - from) * (index + 1)) / (count + 1);
+  top.forEach((pin, index) => pins.set(pin.name, { x: column(index, top.length, topRoom), y: 0, side: 'top' }));
+  bottom.forEach((pin, index) => pins.set(pin.name, { x: column(index, bottom.length, bottomRoom), y: height, side: 'bottom' }));
+  left.forEach((pin, index) => pins.set(pin.name, { x: 0, y: row(index), side: 'left' }));
+  right.forEach((pin, index) => pins.set(pin.name, { x: width, y: row(index), side: 'right' }));
+  const labels: SchematicSymbol['labels'] = [
+    topRoom > 0 ? { attribute: 'ref', x: 0, y: -4, anchor: 'start' } : { attribute: 'ref', x: width / 2, y: -4, anchor: 'middle' },
+    bottomRoom > 0 ? { attribute: 'value', x: 0, y: height + 12, anchor: 'start' } : { attribute: 'value', x: width / 2, y: height + 12, anchor: 'middle' },
+    { attribute: 'title', x: width / 2, y: header + 13, anchor: 'middle' }
+  ];
+  return { type: 'block', width, height, pins, template: null, labels };
 }
 
 interface Cell {
   id: string;
   part: Part | undefined;
+  label?: string;
   symbol: SchematicSymbol;
-  /** The symbol and its labels, relative to the symbol's origin. */
-  box: Box;
   /**
-   * Whether the laid-out node is the whole box, labels included, so that ELK routes no wire
-   * through a label. Only possible when every pin still sits on the box's edge.
+   * The symbol and its labels, relative to the symbol's origin. The laid-out node is this whole
+   * box, so that ELK routes no wire through a label and keeps no two boxes apart by less than its
+   * spacing — its post-compaction honours node sizes, not margins. A block pin on an edge the name
+   * or value sits outside of lies a little inside the node; its lead is simply that much longer.
    */
-  whole: boolean;
+  box: Box;
 }
 
 interface Box {
@@ -206,14 +232,8 @@ function symbolFor(part: Part, symbols: Symbols): SchematicSymbol {
   return symbols.get(KIND_TO_TYPE[part.kind])!;
 }
 
-function cellFor(id: string, part: Part | undefined, symbol: SchematicSymbol): Cell {
-  const box = labelBox(symbol, part);
-  const whole = [...symbol.pins.values()].every((pin) =>
-    pin.side === 'top' ? pin.y === box.top
-      : pin.side === 'bottom' ? pin.y === box.bottom
-        : pin.side === 'left' ? pin.x === box.left
-          : pin.x === box.right);
-  return { id, part, symbol, box, whole };
+function cellFor(id: string, part: Part | undefined, symbol: SchematicSymbol, label?: string): Cell {
+  return { id, part, symbol, box: labelBox(symbol, part, label), ...(label !== undefined ? { label } : {}) };
 }
 
 interface Connection {
@@ -223,7 +243,9 @@ interface Connection {
 
 /**
  * Lay out a netlist. Ground is drawn where it is used: every connection to node 0 gets its own
- * ground symbol, as a hand-drawn schematic would, rather than one net wired across the page.
+ * ground symbol, as a hand-drawn schematic would, rather than one net wired across the page. A
+ * global node likewise: every connection to one gets its own net label, hanging above the pin —
+ * or standing below a pin on a bottom edge — and naming the node.
  */
 export async function layoutSchematic(netlist: Netlist, symbols: Symbols, layout: Layout): Promise<Schematic> {
   const cells: Cell[] = [];
@@ -234,6 +256,8 @@ export async function layoutSchematic(netlist: Netlist, symbols: Symbols, layout
     else nets.set(net, [connection]);
   };
   let grounds = 0;
+  let labels = 0;
+  const globals = new Set(netlist.globals);
   netlist.parts.forEach((part, index) => {
     const symbol = symbolFor(part, symbols);
     const id = `p${index}`;
@@ -249,6 +273,12 @@ export async function layoutSchematic(netlist: Netlist, symbols: Symbols, layout
         cells.push(cellFor(ground, undefined, symbols.get('gnd')!));
         connect(`#${ground}`, { port: `${ground}.A`, side: 'top' });
         connect(`#${ground}`, { port, side: placed.side });
+      } else if (globals.has(pin.node)) {
+        const label = `n${labels++}`;
+        const symbol = symbols.get(placed.side === 'bottom' ? 'netlabel-down' : 'netlabel')!;
+        cells.push(cellFor(label, undefined, symbol, pin.node));
+        connect(`#${label}`, { port: `${label}.A`, side: symbol.pins.get('A')!.side });
+        connect(`#${label}`, { port, side: placed.side });
       } else {
         connect(pin.node, { port, side: placed.side });
       }
@@ -256,24 +286,19 @@ export async function layoutSchematic(netlist: Netlist, symbols: Symbols, layout
   });
 
   const children: ElkNode[] = cells.map((cell) => {
-    const { box, symbol, whole } = cell;
-    // The node's origin is the box's corner when the node is the whole box, else the symbol's.
-    const dx = whole ? -box.left : 0;
-    const dy = whole ? -box.top : 0;
+    const { box, symbol } = cell;
+    // The node's origin is the box's corner; pins are placed relative to the symbol's.
     return {
       id: cell.id,
-      width: whole ? box.right - box.left : symbol.width,
-      height: whole ? box.bottom - box.top : symbol.height,
-      layoutOptions: {
-        'org.eclipse.elk.portConstraints': 'FIXED_POS',
-        ...(whole ? {} : { 'org.eclipse.elk.margins': margins(cell) })
-      },
+      width: box.right - box.left,
+      height: box.bottom - box.top,
+      layoutOptions: { 'org.eclipse.elk.portConstraints': 'FIXED_POS' },
       ports: [...symbol.pins].map(([pid, pin]) => ({
         id: `${cell.id}.${pid}`,
         width: 0,
         height: 0,
-        x: pin.x + dx,
-        y: pin.y + dy,
+        x: pin.x - box.left,
+        y: pin.y - box.top,
         layoutOptions: { 'org.eclipse.elk.port.side': ELK_SIDE[pin.side] }
       }))
     };
@@ -291,15 +316,27 @@ export async function layoutSchematic(netlist: Netlist, symbols: Symbols, layout
 
   const placed: Placed[] = cells.map((cell) => {
     const child = positions.get(cell.id)!;
-    const x = (child.x ?? 0) - (cell.whole ? cell.box.left : 0);
-    const y = (child.y ?? 0) - (cell.whole ? cell.box.top : 0);
-    return { part: cell.part, symbol: cell.symbol, x, y };
+    const x = (child.x ?? 0) - cell.box.left;
+    const y = (child.y ?? 0) - cell.box.top;
+    return { part: cell.part, symbol: cell.symbol, x, y, ...(cell.label !== undefined ? { label: cell.label } : {}) };
+  });
+  // Where each pin is on the page. ELK ends an edge on the node's border; a pin lying inside its
+  // box gets the rest of its lead here.
+  const pinAt = new Map<string, ElkPoint>();
+  cells.forEach((cell, index) => {
+    const item = placed[index]!;
+    for (const [pid, pin] of cell.symbol.pins) pinAt.set(`${cell.id}.${pid}`, { x: item.x + pin.x, y: item.y + pin.y });
   });
   const wires: Wire[] = [];
   const junctions: ElkPoint[] = [];
   for (const edge of laidOut) {
+    const from = pinAt.get(edge.sources[0]!);
+    const to = pinAt.get(edge.targets[0]!);
     for (const section of edge.sections ?? []) {
-      wires.push({ points: [section.startPoint, ...(section.bendPoints ?? []), section.endPoint] });
+      const points = [section.startPoint, ...(section.bendPoints ?? []), section.endPoint];
+      if (from && !same(from, section.startPoint)) points.unshift(from);
+      if (to && !same(to, section.endPoint)) points.push(to);
+      wires.push({ points });
     }
     junctions.push(...(edge.junctionPoints ?? []));
   }
@@ -403,30 +440,30 @@ function removeDummies(edges: ElkExtendedEdge[], dummies: string[]): void {
   }
 }
 
-/** Room ELK must keep free around a symbol so that its labels overlap nothing. */
-function margins(cell: Cell): string {
-  const box = cell.box;
-  const top = Math.max(0, -box.top);
-  const left = Math.max(0, -box.left);
-  const bottom = Math.max(0, box.bottom - cell.symbol.height);
-  const right = Math.max(0, box.right - cell.symbol.width);
-  return `[top=${top},left=${left},bottom=${bottom},right=${right}]`;
-}
-
-/** The extent of a symbol and its labels, relative to the symbol's origin. */
-export function labelBox(symbol: SchematicSymbol, part: Part | undefined): Box {
+/** The extent of a symbol and its labels, relative to the symbol's origin; `label` is a net label's node name. */
+export function labelBox(symbol: SchematicSymbol, part: Part | undefined, label?: string): Box {
   const box = { left: 0, top: 0, right: symbol.width, bottom: symbol.height };
-  for (const label of symbol.labels) {
-    const text = part === undefined ? '' : label.attribute === 'ref' ? part.ref : labelText(part.value);
+  for (const entry of symbol.labels) {
+    const text = labelTextFor(entry, part, label);
     if (!text) continue;
     const width = text.length * CHAR_WIDTH;
-    const left = label.anchor === 'start' ? label.x : label.anchor === 'end' ? label.x - width : label.x - width / 2;
+    const left = entry.anchor === 'start' ? entry.x : entry.anchor === 'end' ? entry.x - width : entry.x - width / 2;
     box.left = Math.min(box.left, left);
     box.right = Math.max(box.right, left + width);
-    box.top = Math.min(box.top, label.y - TEXT_ASCENT);
-    box.bottom = Math.max(box.bottom, label.y + TEXT_DESCENT);
+    box.top = Math.min(box.top, entry.y - TEXT_ASCENT);
+    box.bottom = Math.max(box.bottom, entry.y + TEXT_DESCENT);
   }
   return box;
+}
+
+/** What one of a symbol's texts says for this placement, as drawn, or empty when there is nothing to say. */
+export function labelTextFor(entry: SchematicSymbol['labels'][number], part: Part | undefined, label?: string): string {
+  switch (entry.attribute) {
+    case 'net': return label === undefined ? '' : labelText(label);
+    case 'ref': return part?.ref ?? '';
+    case 'value': return labelText(part?.value ?? '');
+    default: return labelText(part?.title ?? '');
+  }
 }
 
 function bounds(placed: Placed[], wires: Wire[]): Schematic['bounds'] {

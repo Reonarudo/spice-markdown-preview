@@ -9,7 +9,7 @@
   - <g s:pid s:x s:y s:position> is a pin. `top` pins are drawn above, `bottom` below,
     `left` and `right` beside the symbol.
   - <text s:attribute="ref|value"> is replaced by the part's name or value, or dropped
-    when the part has none.
+    when the part has none; <text s:attribute="net"> by a net label's node name.
   - class="symbol" is a thick outline, "detail" a filled mark, "connect" a pin lead;
     media/preview.css styles them.
 -->
@@ -18,6 +18,20 @@
 <g s:type="gnd" s:width="20" s:height="30">
   <path d="M0,15 H20 M3,20 H17 M7,25 H13 M10,15 V0" class="connect"/>
   <g s:x="10" s:y="0" s:pid="A" s:position="top"/>
+</g>
+
+<!-- A net label: a global node's name on a short lead. `netlabel` hangs its lead down to a pin
+     below it; `netlabel-down` stands on a pin above it, for a pin on a block's bottom edge. -->
+<g s:type="netlabel" s:width="10" s:height="20">
+  <text x="5" y="7" class="nodelabel" s:attribute="net">net</text>
+  <path d="M5,10 V20" class="connect"/>
+  <g s:x="5" s:y="20" s:pid="A" s:position="bottom"/>
+</g>
+
+<g s:type="netlabel-down" s:width="10" s:height="20">
+  <path d="M5,0 V10" class="connect"/>
+  <text x="5" y="20" class="nodelabel" s:attribute="net">net</text>
+  <g s:x="5" s:y="0" s:pid="A" s:position="top"/>
 </g>
 
 <g s:type="resistor" s:width="10" s:height="50">

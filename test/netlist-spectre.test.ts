@@ -256,3 +256,8 @@ test('the mixed-language deck: SPICE-mode elements beside Spectre instances, a s
   assert.deepEqual([pins(by('Rload')), by('Rload').value], [['A=out', 'B=0'], '1k']);
   assert.deepEqual([pins(by('Rsel')), by('Rsel').value], [['A=Out', 'B=0'], 'r=rval']);
 });
+
+// 12. `global` names after the first (ground) are global nodes (#1197 rule 3), case kept.
+test('the names on a global statement after the ground are the netlist\'s global nodes', () => {
+  assert.deepEqual(netlist('global 0 vdd! Vss\nr1 (vdd! a) resistor r=1').globals, ['vdd!', 'Vss']);
+});

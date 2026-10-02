@@ -213,3 +213,15 @@ test('parseNetlist takes the dialect as an optional trailing argument, and ngspi
   const source = 'R1 in out 10k\nQ1 c b e BC547\n.model BC547 NPN';
   assert.deepEqual(parseNetlist(source, undefined, 'ngspice'), parseNetlist(source));
 });
+
+test('a block pin carries the side its catalogue terminal names; pins the netlist names by position carry none', () => {
+  const [source, call] = parts('E1 o 0 c 0 10\nX1 a b sub\n.subckt sub p q\n.ends');
+  assert.deepEqual(source!.pins.map((pin) => [pin.name, pin.side]), [['n+', 'right'], ['n-', 'right'], ['nc+', 'left'], ['nc-', 'left']]);
+  assert.deepEqual(call!.pins.map((pin) => [pin.name, pin.side]), [['p', undefined], ['q', undefined]]);
+});
+
+test('the netlist lists its global nodes: every name a .global statement declares, normalised, in order of declaration', () => {
+  const circuit = netlist('.global VDD vss\nR1 vdd out 1k\nR2 out vss 1k\nR3 out 0 1k');
+  assert.deepEqual(circuit.globals, ['vdd', 'vss']);
+  assert.deepEqual(netlist('R1 a 0 1k').globals, []);
+});

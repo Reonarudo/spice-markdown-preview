@@ -11,7 +11,8 @@
 import { IncludePathError, resolveInclude } from './include-paths';
 import { CATALOGUE, elementTypeForLetter, elementTypeForMaster, type ElementTypeId, type SpellingHints } from './catalogue/index';
 import { DIALECTS } from './catalogue/dialects';
-import type { CountSource, DialectId, ElementType, Form, PinRule, Terminal, Terminals } from './catalogue/types';
+import type { CountSource, DialectId, ElementType, Form, PinRule, Side, Terminal, Terminals } from './catalogue/types';
+export type { Side };
 import { parse } from './parser/registry';
 import { splitRegions, startLanguage } from './parser/regions';
 import type { Card as ParsedCard, ParseError as ParserError, Token as ParsedToken } from './parser/contract';
@@ -29,6 +30,10 @@ export interface Pin {
   name: string;
   /** Normalised node name: lower case, and `0` for every spelling of ground. */
   node: string;
+  /** For a block pin: the edge the catalogue's terminal puts it on. Absent when the netlist names the pin by position. */
+  side?: Side;
+  /** Unused by the element's definition — an LTspice `A` pin tied to its common — and not drawn. */
+  hidden?: true;
 }
 
 export interface Part {
@@ -50,6 +55,12 @@ export interface Part {
 
 export interface Netlist {
   parts: Part[];
+  /**
+   * Global nodes, normalised as pins name them: those a `.global` (Spectre `global`) statement
+   * declares, in order, then those global by their spelling (`$G_…`), in order of first use. Ground
+   * is never one. Every connection to one is drawn as a net label, as ground is as a ground symbol.
+   */
+  globals: string[];
   /** Things skipped or assumed, for the output channel. Never shown in the preview. */
   notes: string[];
 }
@@ -499,6 +510,8 @@ interface Context {
   replaceGround: boolean;
   /** Spectre: the first name on the first `global` statement is the ground node (Reference 19.1 p.482), as written. */
   globalGround?: string;
+  /** The nodes `.global` statements declare, normalised, in order and without repeats. */
+  globals: string[];
   notes: string[];
 }
 
@@ -537,7 +550,7 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
   const top = toCards(source, '', undefined, dialect, notes);
   if (top.error) throw top.error;
   const cards = expand(top.cards, '', includes, notes, [], dialect);
-  const context: Context = { dialect, models: new Map(), subcircuits: new Map(), connected: new Map(), replaceGround: false, notes };
+  const context: Context = { dialect, models: new Map(), subcircuits: new Map(), connected: new Map(), replaceGround: false, globals: [], notes };
   const elements: Card[] = [];
 
   // First pass: directives, so that a model or subcircuit defined below its use still counts.
@@ -625,10 +638,14 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
       if (first && second) context.connected.set(normalise(second.text, context, card), normalise(first.text, context, card));
       continue;
     }
-    if ((word === 'global' || word === '.global') && DIALECTS[card.dialect].groundFromGlobal && context.globalGround === undefined) {
+    if ((word === 'global' || word === '.global') && DIALECTS[card.dialect].globalStatement) {
+      const names = card.parsed.tokens.filter((token) => token.class === 'word');
       // Spectre: "the first node name that appears in this list is taken to be the name of the ground node" (Reference 19.1 p.482).
-      const first = card.parsed.tokens.find((token) => token.class === 'word');
-      if (first) context.globalGround = first.text;
+      if (DIALECTS[card.dialect].groundFromGlobal && context.globalGround === undefined && names[0]) context.globalGround = names[0].text;
+      for (const name of names) {
+        const node = normalise(name.text, context, card);
+        if (node !== GROUND && !context.globals.includes(node)) context.globals.push(node);
+      }
       continue;
     }
     if (word === '.preprocess' && DIALECTS[dialect].groundWhenReplaceGround !== undefined) {
@@ -684,9 +701,15 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
 
   const parts: Part[] = [];
   const seen = new Map<string, Card>();
+  const { globals } = context;
+  const rules = DIALECTS[dialect];
+  const patterns = rules.globalNodePatterns.map((pattern) => new RegExp(pattern, rules.caseSensitive ? '' : 'i'));
   for (const card of elements) {
     const part = toPart(card, context);
     if (!part) continue;
+    for (const pin of part.pins) {
+      if (patterns.some((pattern) => pattern.test(pin.node)) && !globals.includes(pin.node)) globals.push(pin.node);
+    }
     const key = nameKey(card, part.ref);
     const earlier = seen.get(key);
     if (earlier !== undefined) {
@@ -701,7 +724,7 @@ function read(source: string, includes: IncludeSet, dialect: DialectId): Netlist
   if (parts.length === 0) {
     throw new ParseError('No elements found. Write one element per line, e.g. R1 in out 10k.', { line: 1, column: 0, file: '' });
   }
-  return { parts, notes };
+  return { parts, globals, notes };
 }
 
 /** A subcircuit's ports in order; the first `required` are mandatory, the rest PSpice `OPTIONAL:` pins a call may leave off from the right. */
@@ -747,6 +770,7 @@ function subcircuitPorts(tokens: ParsedToken[]): Ports {
 interface Slot {
   name: string;
   optional: boolean;
+  side: Side;
 }
 
 /** The leading tokens that may be nodes: words and keywords, up to the first pair, group, `params:` or PSpice `text:`. */
@@ -997,7 +1021,7 @@ function finishPart(card: Card, context: Context, resolved: Resolved): Part | un
     return undefined;
   }
 
-  const pins = toPins(card, nodeTokens, slots, 'block' in type.draw ? type.draw.block.pins : undefined, nameToken, context, ref);
+  const pins = toPins(card, nodeTokens, slots, 'block' in type.draw ? type.draw.block.pins : undefined, nameToken, context, ref, 'block' in type.draw);
 
   if ('symbol' in type.draw) {
     const { symbol } = type.draw;
@@ -1109,13 +1133,13 @@ function expandTerminals(form: Form, keyword: ParsedToken | undefined, pairs: Pa
   const slots: Slot[] = [];
   for (const entry of form.terminals) {
     if (!('repeat' in entry)) {
-      slots.push({ name: entry.name, optional: entry.optional === true });
+      slots.push({ name: entry.name, optional: entry.optional === true, side: entry.side });
       continue;
     }
     const times = entry.repeat.split('*').reduce((product, name) => product * count(name), 1);
     for (let index = 1; index <= times; index++) {
       for (const terminal of entry.terminals as readonly Terminal[]) {
-        slots.push({ name: terminal.name.replace('#', String(index)), optional: terminal.optional === true });
+        slots.push({ name: terminal.name.replace('#', String(index)), optional: terminal.optional === true, side: terminal.side });
       }
     }
   }
@@ -1177,7 +1201,7 @@ function normalise(name: string, context: Context, card: Card): string {
 }
 
 /** Name each node token's pin: from the form's terminals, or by the block's pin rule. */
-function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinRule | undefined, nameToken: ParsedToken | undefined, context: Context, ref: string): Pin[] {
+function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinRule | undefined, nameToken: ParsedToken | undefined, context: Context, ref: string, block: boolean): Pin[] {
   const { subcircuits, notes } = context;
   const nodes = nodeTokens.map((token) => joined(normalise(token.text, context, card), context));
   switch (rule) {
@@ -1195,9 +1219,21 @@ function toPins(card: Card, nodeTokens: ParsedToken[], slots: Slot[], rule: PinR
     }
     case 'xspice-ports':
       return xspicePins(nodeTokens, context, card);
-    case 'hide-tied-to-common':
+    case 'hide-tied-to-common': {
+      // The common is the form's last terminal; every other pin on its node is unused (#1197).
+      const common = nodes[slots.length - 1];
+      return nodes.map((node, index) => {
+        const slot = slots[index]!;
+        const pin: Pin = { name: slot.name, node, side: slot.side };
+        return index < slots.length - 1 && node === common ? { ...pin, hidden: true } : pin;
+      });
+    }
     case undefined:
-      return nodes.map((node, index) => ({ name: slots[index]?.name ?? String(index + 1), node }));
+      // A block's pin sits on the edge its terminal names; a symbol's pins have their own places.
+      return nodes.map((node, index) => {
+        const slot = slots[index];
+        return slot && block ? { name: slot.name, node, side: slot.side } : { name: slot?.name ?? String(index + 1), node };
+      });
   }
 }
 

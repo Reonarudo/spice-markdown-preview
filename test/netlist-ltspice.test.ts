@@ -179,3 +179,17 @@ test('the buck converter deck: VDMOS switches are three-pin and P by pchan, A fu
   assert.equal(by('M1').value, 'IRF540');
   assert.equal(by('L1').value, '22µ Rser=20m');
 });
+
+// 11. An `A` pin tied to the common terminal (pin 8) is unused by LTspice's definition and is hidden (#1197 rule 6);
+//     the common itself and every pin on another node stay drawn.
+test('an A pin on the common terminal\'s node is hidden; the common and the other pins are not', () => {
+  const [gate] = parts('A1 in1 in2 0 0 0 out 0 0 AND');
+  assert.deepEqual(gate!.pins.map((pin) => [pin.name, pin.hidden]), [
+    ['1', undefined], ['2', undefined], ['3', true], ['4', true], ['5', true], ['6', undefined], ['7', true], ['8', undefined]
+  ]);
+});
+
+// 12. A node spelled `$G_…` is global by its name alone (#1185); the netlist lists it once, in order of first use.
+test('a $G_ node is a global node of the netlist, listed once', () => {
+  assert.deepEqual(netlist('R1 $G_VDD out 1k\nR2 out $G_vdd 1k\nR3 out $G_VSS 1k').globals, ['$g_vdd', '$g_vss']);
+});

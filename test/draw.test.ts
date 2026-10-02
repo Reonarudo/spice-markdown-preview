@@ -6,15 +6,16 @@ import { DOMParser } from '@xmldom/xmldom';
 import { loadSymbols } from '../src/schematic';
 import { renderNetlist } from '../src/draw-netlist';
 import { loadNgspice } from './helpers/ngspice';
+import { loadLtspice } from './helpers/ltspice';
 
-before(loadNgspice);
+before(async () => { await loadNgspice(); await loadLtspice(); });
 
 const symbols = loadSymbols(readFileSync('src/skin/symbols.svg', 'utf8'));
 const elk = new ELK();
 const layout = (graph: Parameters<typeof elk.layout>[0]) => elk.layout(graph);
 
-async function draw(source: string): Promise<string> {
-  const result = await renderNetlist(source, symbols, layout);
+async function draw(source: string, dialect?: Parameters<typeof renderNetlist>[4]): Promise<string> {
+  const result = await renderNetlist(source, symbols, layout, undefined, dialect);
   assert.equal(result.status, 'success', JSON.stringify(result));
   return result.status === 'success' ? result.output : '';
 }
@@ -78,4 +79,9 @@ test('a layout failure is a failure with a plain message, never an exception', a
 test('renderNetlist takes the dialect as an optional trailing argument, and ngspice is the default', async () => {
   const source = 'V1 in 0 5\nR1 in out 1k';
   assert.deepEqual(await renderNetlist(source, symbols, layout, undefined, 'ngspice'), await renderNetlist(source, symbols, layout));
+});
+
+test('a global node is drawn as net labels carrying its name as text, one per connection', async () => {
+  const svg = await draw('R1 $G_VDD out 1k\nR2 out 0 1k\nC1 $G_VDD 0 1n', 'ltspice');
+  assert.equal((svg.match(/>\$g_vdd<\/text>/g) ?? []).length, 2);
 });

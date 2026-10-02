@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Blocks place their pins where the element catalogue says: inputs on the left,
+  outputs on the right, supply pins (`DPWR`/`DGND`, IBIS `nd_pu`/`nd_pd`) on the
+  top and bottom edges; pins the netlist names by position are still split left
+  and right. Every connection to a global node — a `.global` or Spectre `global`
+  name, or a `$G_…` node in LTspice, PSpice and Xyce — ends at a net label of
+  its own naming the node, as ground ends at a ground symbol. An LTspice `A`
+  pin tied to its common terminal is not drawn. Parts and their labels are kept
+  apart by the layout, so a long name or value no longer overlaps a neighbour.
 - A fence names its dialect with a `dialect` attribute (`ngspice`, `ltspice`,
   `pspice`, `hspice`, `xyce` or `spectre`); fences without one follow the new
   `spice.dialect` setting (per workspace folder, default `ngspice`). Included

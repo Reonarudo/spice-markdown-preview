@@ -44,7 +44,13 @@ Every element letter ngspice knows is read with the terminals ngspice gives it:
 model, `D` with a thermal node, and `X1 (a b) sub` with its nodes in
 parentheses.
 
-Every connection to ground (`0` or `gnd`) gets its own ground symbol. Node names
+Every connection to ground (`0` or `gnd`) gets its own ground symbol, and every
+connection to a global node (a `.global` name, or `$G_…` in LTspice and PSpice)
+its own net label naming the node. A part with no symbol of its own — a
+subcircuit, a dependent source, a digital gate, a code model — is a block: a
+box titled with what it is, inputs on the left, outputs on the right and supply
+pins on the top and bottom edges as the element catalogue places them, with
+pins numbered where the netlist cannot know their names. Node names
 are case-insensitive, as in SPICE. `+` and `\\` continuation lines, `*`, `#`,
 `;`, `$` and `//` comments, and `'…'` and `{…}` expressions work as in ngspice.
 Analysis directives such as `.tran` are skipped, as are `.subckt` bodies (which
