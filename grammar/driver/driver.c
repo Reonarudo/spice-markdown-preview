@@ -50,6 +50,12 @@ void scan_group_append(struct scan_state *state, const char *text, size_t length
   state->group.text[state->group.length] = 0;
 }
 
+void scan_group_continue(struct scan_state *state) {
+  while (state->group.length > 0 && strchr(" \t\r", state->group.text[state->group.length - 1])) state->group.length--;
+  state->group.text[state->group.length] = 0;
+  scan_group_append(state, " ", 1);
+}
+
 char *scan_group_take(struct scan_state *state) {
   return json_strndup(state->group.text, state->group.length);
 }

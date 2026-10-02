@@ -31,8 +31,13 @@ void json_instance(struct json *j, char *ref, char *master, int line, int column
 void json_nodes_closed(struct json *j);
 /* Open a directive card; `name` is lower-cased. `.model` cards are trimmed (ADR 0008). */
 void json_directive(struct json *j, char *name, int line, int column, int end);
-void json_token(struct json *j, const char *class, char *text, int line, int column, int end);
-void json_pair(struct json *j, char *key, char *value, int line, int column, int end);
+/*
+ * A token's span: `line` and `column` where it starts, `end` the exclusive column where it stops on
+ * `end_line`. A group continued across `+` lines (or a pair whose value is) ends on a later line;
+ * `endLine` is then written, and left out when the token sits on one line.
+ */
+void json_token(struct json *j, const char *class, char *text, int line, int column, int end_line, int end);
+void json_pair(struct json *j, char *key, char *value, int line, int column, int end_line, int end);
 void json_card_end(struct json *j);
 
 /*

@@ -31,6 +31,7 @@
 
 //@ section continuation
 <INITIAL,MODEL>\n([*;][^\n]*\n|{WS}+[^+ \t\r\n][^\n]*\n|{WS}*\n)*{WS}*\+   { /* `+` continues the card; comment lines — `*`, `;` or indented — and blank lines between the pieces are allowed */ }
+<NODES,GROUPSCAN>\n([*;][^\n]*\n|{WS}+[^+ \t\r\n][^\n]*\n|{WS}*\n)*{WS}*\+{WS}* { CONTINUED(); /* the same `+` inside a node list or a group */ }
 <LINESTART>\+                                   { BEGIN(INITIAL); yyextra->at_card_start = 0; scan_remember(yyextra, yytext, yyleng); return BAD_CONTINUATION; }
 //@ end
 

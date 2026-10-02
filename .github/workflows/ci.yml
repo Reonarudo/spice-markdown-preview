@@ -92,9 +92,10 @@ jobs:
       - run: node --import tsx scripts/corpus.ts --dialect pspice --ext .pspice,.net,.lib --title .pspice "$RUNNER_TEMP/xyce-regression/Netlists/XDM/PSPICE"
       - run: node --import tsx scripts/corpus.ts --dialect hspice --ext .cir,.net,.lib --title .cir,.net "$RUNNER_TEMP/xyce-regression/Netlists/XDM/HSPICE"
       # Native Xyce decks: every .cir outside XDM and outside the directories that hold Xyce's own
-      # error-message tests, which are malformed on purpose. A group continued onto a `+` line is
-      # tolerated until the SPICE base reads one (the map's "groups across continuation lines" ticket).
-      - run: node --import tsx scripts/corpus.ts --dialect xyce --ext .cir --title .cir --except /XDM/,/Certification_Tests/,/Message/,/MEASURE/,/NOISE/,/INVALID_CHARS/ --tolerate unterminated-group "$RUNNER_TEMP/xyce-regression/Netlists"
+      # error-message tests, which are malformed on purpose — and five decks that never close a
+      # `(` (SENS/*vsin.cir, MEXTRAM/FGummel_Ib_noFlip_P_TRANS.cir) or a `{` on purpose
+      # (FOURIER/bad_dot_four_line1.cir), which Xyce tolerates and this preview reports.
+      - run: node --import tsx scripts/corpus.ts --dialect xyce --ext .cir --title .cir --except /XDM/,/Certification_Tests/,/Message/,/MEASURE/,/NOISE/,/INVALID_CHARS/,/SENS/vsin.cir,/SENS/dummy_vsin.cir,/SENS/devLevelParams_vsin.cir,/SENS/dummy_devLevelParams_vsin.cir,/MEXTRAM/FGummel_Ib_noFlip_P_TRANS.cir,/FOURIER/bad_dot_four_line1.cir "$RUNNER_TEMP/xyce-regression/Netlists"
   minimum-vscode:
     runs-on: ubuntu-latest
     steps:

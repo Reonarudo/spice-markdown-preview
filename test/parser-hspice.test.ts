@@ -88,6 +88,12 @@ test('+ continues the previous card across comment and blank lines, and a blank 
   assert.deepEqual(output.cards[1]!.tokens.map((t) => t.line), [4, 4, 4, 4, 4, 5, 5, 6, 6]);
 });
 
+test('a group closes on a + line; a trailing backslash inside a group does not continue it', () => {
+  const pwl = read('V1 in 0 PWL(0 0\n+ 1n 1)\n').cards[0]!.tokens[2]!;
+  assert.deepEqual([pwl.text, pwl.line, pwl.endLine, pwl.end], ['PWL(0 0 1n 1)', 1, 2, 7]);
+  assert.equal(error('V1 in 0 PWL(0 0 \\\n1n 1)\n').code, 'unterminated-group', 'only a + line continues an open group (noted in ADR 0008)');
+});
+
 test('a backslash with no blank before it is text, and a + line with nothing before it is an orphan', () => {
   assert.deepEqual(cards('R1 a b 1k\\\nR2 c d 2k\n'), ['R1:R a b 1k\\', 'R2:R c d 2k']);
   assert.equal(error('+ R1 a b 1k\n').code, 'orphan-continuation');

@@ -29,6 +29,8 @@ struct scan_state {
 /* Start gathering a group at `text` (the opening bracket, with any word glued before it). */
 void scan_group_begin(struct scan_state *state, const char *text, size_t length, char open, char close, int kind);
 void scan_group_append(struct scan_state *state, const char *text, size_t length);
+/* The group continues on a `+` line: drop the blanks before the line break and join the pieces with one blank. */
+void scan_group_continue(struct scan_state *state);
 /* The gathered group as a fresh string the json_* calls will free; the buffer is kept for the next. */
 char *scan_group_take(struct scan_state *state);
 void scan_group_free(struct scan_state *state);

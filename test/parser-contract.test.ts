@@ -27,11 +27,14 @@ interface Fixture {
   brokenFound: string;
 }
 
-/** `.model` cards are trimmed to the name, the bare type and a `level` pair (ADR 0008); `1R` is no element in any SPICE dialect. */
+/**
+ * `.model` cards are trimmed to the name, the bare type and a `level` pair (ADR 0008); a group may close on a `+` line, its
+ * pieces joined by one blank; `1R` is no element in any SPICE dialect.
+ */
 const SPICE_FIXTURE: Fixture = {
-  text: 'R1 in out 10k\n.model bc547 npn(bf=100 level=1)\n',
-  cards: [{ kind: 'element', ref: 'R1', letter: 'R' }, { kind: 'directive', name: '.model' }],
-  tokens: [['in', 'out', '10k'], ['bc547', 'npn', 'level=1']],
+  text: 'R1 in out 10k\n.model bc547 npn(bf=100 level=1)\nV1 in 0 PWL(0 0\n+ 1m 5)\n',
+  cards: [{ kind: 'element', ref: 'R1', letter: 'R' }, { kind: 'directive', name: '.model' }, { kind: 'element', ref: 'V1', letter: 'V' }],
+  tokens: [['in', 'out', '10k'], ['bc547', 'npn', 'level=1'], ['in', '0', 'PWL(0 0 1m 5)']],
   broken: 'R1 in out 10k\n1R a b\n',
   brokenFound: '1R'
 };

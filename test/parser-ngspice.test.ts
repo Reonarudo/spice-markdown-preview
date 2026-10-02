@@ -113,13 +113,27 @@ test("'…' is an expression and \"…\" a string: both are groups that may hold
   assert.deepEqual(cards(".param a = '123 * 3'\nV1 1 0 '2--3'\nC1 a 0 c='1n * 2'\n"), [".param P:a='123 * 3'", "V1:V 1 0 G:'2--3'", "C1:C a 0 P:c='1n * 2'"]);
 });
 
-test('a bracket that does not close on its line is the coded error unterminated-group, pointing at the bracket', () => {
+test('a bracket that does not close on its line or a + line continuing it is the coded error unterminated-group, pointing at the bracket', () => {
   const found = error('R1 a b 1\nV1 a 0 pulse(0 1 0 1n\nR2 a b 2\n');
   assert.equal(found.code, 'unterminated-group');
   assert.deepEqual([found.line, found.column, found.end, found.found.text], [2, 12, 13, '(']);
   assert.deepEqual(found.cards, ['R1:R a b 1', 'V1:V a 0'], 'the cards before the error are kept');
   assert.equal(error('X1 (a b sub\n').code, 'unterminated-group');
   assert.equal(error('.param x={1\n').found.text, '{');
+  assert.deepEqual([error('V1 a 0 pulse(0 1\n+ 0 1n\nR2 a b 2\n').line, error('V1 a 0 pulse(0 1\n+ 0 1n\nR2 a b 2\n').found.text], [1, '('], 'continued once and still open');
+});
+
+test('a group closed on a + line is one token joined by a blank, ending on that line; a node list may continue too', () => {
+  // Every SPICE simulator joins `+` lines before tokenising, so `PWL(…` may close lines later (ADR 0008, groups across continuation lines).
+  const pwl = read('VS 1 0 PWL(0S 0V 1S 1V \n* between\n\n+ 2S 4V)\nR1 a b 1k\n');
+  assert.deepEqual(pwl.cards.map(compact), ['VS:V 1 0 PWL(0S 0V 1S 1V 2S 4V)', 'R1:R a b 1k']);
+  const group = pwl.cards[0]!.tokens[2]!;
+  assert.deepEqual([group.line, group.column, group.endLine, group.end], [1, 7, 4, 8], 'the token starts at PWL and ends after the ) on line 4');
+  const pair = read('B1 a b I={limit( (P*V(a)),\n+ voltlim=1 ) }\n').cards[0]!.tokens[2]!;
+  assert.deepEqual([pair.class, pair.text, pair.value, pair.endLine, pair.end], ['pair', 'I={limit( (P*V(a)), voltlim=1 ) }', '{limit( (P*V(a)), voltlim=1 ) }', 2, 15]);
+  assert.deepEqual(cards('X1 (a b\n+ c) sub\n'), ['X1:X( a b c sub']);
+  assert.equal(read('R1 a b r=\n+ 1k\n').cards[0]!.tokens[2]!.endLine, 2, 'a pair split at its = ends on the value\'s line');
+  assert.equal(read('R1 a b 1k\n+ tc1=1\n').cards[0]!.tokens[3]!.endLine, undefined, 'a token on one line has no endLine');
 });
 
 // --- Heads -------------------------------------------------------------------------------------------

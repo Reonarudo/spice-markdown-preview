@@ -263,13 +263,23 @@ test('.if draws its first branch and skips .elseif and .else, so the manual\'s e
 // Structural errors the parser reports get today's wording, and a new one for an open bracket.
 test('an unterminated bracket and a stray = are reported where they are, in words', () => {
   const open = error('R1 a b 1\nV1 a 0 pulse(0 1 0 1n\nR2 a b 2');
-  assert.equal(open.message, 'The ( opened here is not closed on its line.');
+  assert.equal(open.message, 'The ( opened here is not closed.');
   assert.deepEqual([open.line, open.column], [2, 12]);
   const stray = error('R2 a b 1\nR1 a b =');
   assert.equal(stray.message, 'Unexpected end of line; expected word, keyword or group.');
   assert.deepEqual([stray.line, stray.column], [2, 7]);
   assert.match(error('R1 a b =').message, /^Unexpected end of line; expected word, keyword or group\. If this line is a title/);
   assert.equal(error('.control\nrun').message, '.control has no matching .endc.');
+});
+
+// A group continued across + lines is one value, and a node list may continue too (ADR 0008, groups across continuation lines).
+test('a PWL source continued onto + lines keeps one value, and a node list closed on a + line counts its nodes', () => {
+  const [source, bsrc, sub] = parts('VS 1 0 PWL(0S 0V 1S 1V\n* between\n+ 2S 4V)\nB1 1 0 I={limit( (P*V(1)),\n+ voltlim=1 ) }\nX1 (in\n+ out) filter params: k=3\n.subckt filter (a b)\nR1 a b 1k\n.ends');
+  assert.deepEqual([pins(source), source!.value], [['+=1', '-=0'], 'PWL(0S 0V 1S 1V 2S 4V)']);
+  assert.deepEqual([pins(bsrc), bsrc!.value], [['+=1', '-=0'], 'I={limit( (P*V(1)), voltlim=1 ) }']);
+  assert.deepEqual([pins(sub), sub!.title, sub!.value], [['a=in', 'b=out'], 'filter', 'params: k=3']);
+  const open = error('R0 1 0 1k\nVS 1 0 PWL(0S 0V 1S 1V\n+ 2S 4V\nR1 1 0 1k');
+  assert.deepEqual([open.message, open.line, open.column], ['The ( opened here is not closed.', 2, 10]);
 });
 
 // A .model's level reaches the catalogue's selectors, and its type survives parentheses and continuation.

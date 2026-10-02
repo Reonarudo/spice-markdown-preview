@@ -27,8 +27,14 @@ export interface Span {
   line: number;
   /** 0-based column of the first character. */
   column: number;
-  /** 0-based column one past the last character. */
+  /** 0-based column one past the last character, on `endLine` when that is present. */
   end: number;
+  /**
+   * Tokens only: the 1-based line the token ends on, when it is not `line`. A group continued
+   * across `+` lines — or a pair whose value is — ends on a later line; its `text` joins the
+   * pieces with one blank where the line break and the `+` were. Cards and errors never have it.
+   */
+  endLine?: number;
 }
 
 export interface ElementCard extends Span {

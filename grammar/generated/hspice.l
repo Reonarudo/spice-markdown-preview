@@ -16,7 +16,8 @@
  *   LINESTART  at the start of a card, until its head token is read;
  *   INITIAL    the rest of an element or directive card;
  *   NODES      inside the parenthesised node list that may follow an element's name;
- *   GROUPSCAN  inside a `(…)` or `{…}` group, nested brackets counted, until it closes on its line;
+ *   GROUPSCAN  inside a `(…)` or `{…}` group, nested brackets counted, until it closes — on its line or
+ *              on a `+` line continuing it (ADR 0008 *Groups across continuation lines*);
  *   MODEL      the rest of a `.model` card, where `(` and `)` are only separators;
  *   OPAQUE     a region the dialect swallows (`.control` … `.endc`), back to its closing head;
  *   AFTEREND   after the first `.end`: lines are only counted.
@@ -73,7 +74,10 @@
     BEGIN(GROUPSCAN);                                       \
   } while (0)
 
-/* The line ended inside a node list or group: the error points at the bracket that opened it. */
+/* A `+` line continues the card inside a node list or a group: the pieces of a group are joined by one blank. */
+#define CONTINUED() do { if (YY_START == GROUPSCAN) scan_group_continue(yyextra); } while (0)
+
+/* The line ended inside a node list or group with no `+` line to continue it: the error points at the bracket that opened it. */
 #define UNTERMINATED_AT_OPEN(bracket) do {                  \
     yylloc->first_line = yylloc->last_line = yyextra->open_line; \
     yylloc->first_column = yyextra->open_column;            \
@@ -163,6 +167,7 @@ ELEMENT_LETTER  [BCDEFGHIJKLMPQRSTUVWX]
 
   /* from grammar/dialects/hspice/scanner.l: continuation */
 <INITIAL,MODEL>\n(\*[^\n]*\n|{WS}*\n)*{WS}*\+   { /* `+` continues the card; comment and blank lines between the pieces are allowed */ }
+<NODES,GROUPSCAN>\n(\*[^\n]*\n|{WS}*\n)*{WS}*\+{WS}* { CONTINUED(); /* the same `+` inside a node list or a group */ }
 <INITIAL,MODEL>{WS}+\\\\?{WS}*\n                { /* HSPICE: a blank then `\` or `\\` at the end of a line continues it */ }
 <LINESTART>\+                                   { BEGIN(INITIAL); yyextra->at_card_start = 0; scan_remember(yyextra, yytext, yyleng); return BAD_CONTINUATION; }
 
@@ -229,7 +234,7 @@ ELEMENT_LETTER  [BCDEFGHIJKLMPQRSTUVWX]
 <NODES>.                                  { TOKEN(WORD); }
 
   /* from grammar/spice/scanner.l: groups */
-  /* A `(…)` or `{…}` group is one token, nested brackets and all, and must close on its line. */
+  /* A `(…)` or `{…}` group is one token, nested brackets and all; it must close on its line or on a `+` line continuing it (the `continuation` section). */
 <INITIAL>\{                               { GROUP_BEGIN('{', '}', GROUP); }
 <GROUPSCAN>[^(){}\n]+                     { scan_group_append(yyextra, yytext, yyleng); }
 <GROUPSCAN>[({]                           { if (yytext[0] == yyextra->group.open) yyextra->group.depth++; scan_group_append(yyextra, yytext, yyleng); }

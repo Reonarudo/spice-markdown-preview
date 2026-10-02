@@ -78,6 +78,10 @@ test('+ continues the previous card across comment and blank lines, glued or not
   assert.deepEqual(output.cards[0]!.tokens.map((t) => t.line), [1, 1, 1, 1, 1, 2, 2, 5, 5]);
   assert.deepEqual(read('R1 a b \\\\\n1k\n').cards.map(compact), ['R1:R a b \\\\']);
   assert.equal(error('R1 a b \\\\\n1k\n').code, 'not-an-element');
+  const pwl = read('V1 1 0 PWL(0 0\n* note\n+ 1m 5)\n').cards[0]!.tokens[2]!;
+  assert.deepEqual([pwl.text, pwl.line, pwl.endLine, pwl.end], ['PWL(0 0 1m 5)', 1, 3, 7], 'a group closes on a + line, comment lines between');
+  const table = read('E1 3 0 TABLE {V(2)} = (0,0)\n+ (1,1)\n').cards[0]!.tokens;
+  assert.deepEqual(table.map((t) => t.endLine), [undefined, undefined, undefined, undefined, undefined], 'a group that opens on the + line is on one line');
 });
 
 // --- Heads (RG p.134–136; disagreements 3–7: B Z N O U are PSpice devices; no A, P or Y) ------------

@@ -28,6 +28,7 @@ BRACES    \{[^{}\n]*\}
 
 //@ section continuation
 <INITIAL,MODEL>\n(\*[^\n]*\n|{WS}*\n)*{WS}*\+   { /* `+` continues the card; comment and blank lines between the pieces are allowed */ }
+<NODES,GROUPSCAN>\n(\*[^\n]*\n|{WS}*\n)*{WS}*\+{WS}* { CONTINUED(); /* the same `+` inside a node list or a group */ }
 <INITIAL,MODEL>\\\\{WS}*\n                      { /* ngspice: a line ending in `\\` continues on the next */ }
 <LINESTART>\+                                   { BEGIN(INITIAL); yyextra->at_card_start = 0; scan_remember(yyextra, yytext, yyleng); return BAD_CONTINUATION; }
 //@ end

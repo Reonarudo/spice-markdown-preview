@@ -142,12 +142,14 @@ test("'…' and \"…\" are groups that may hold spaces; {…} is a group with n
   ]);
 });
 
-test('a group continued onto a + line is the coded error unterminated-group, whether it is a value or a pair\'s value', () => {
-  // Xyce_Regression's PDE decks write `+ region={name = reg1,` across lines; the base reads a group on one line only (noted on the map).
-  const bare = error('V1 in 0 PWL(0 0\n+ 1m 5)\n');
-  assert.deepEqual([bare.code, bare.line, bare.found.text], ['unterminated-group', 1, '(']);
-  const paired = error('YPDE pde1 a b zmod\n+ region={name = reg1,\n+ xlo=0}\n');
-  assert.deepEqual([paired.code, paired.line, paired.column, paired.found.text, paired.cards], ['unterminated-group', 2, 9, '{', ['pde1:Y/PDE a b zmod']], 'the card in progress is kept up to the error');
+test('a group continued onto a + line closes there, whether it is a value or a pair\'s value, with Xyce\'s comment lines between', () => {
+  // Xyce_Regression's PDE decks write `+ region={name = reg1,` across lines, and 57 of its decks continue a PWL or a brace expression this way.
+  const bare = read('V1 in 0 PWL(0 0\n  indented comment\n; another\n+ 1m 5)\n').cards[0]!.tokens[2]!;
+  assert.deepEqual([bare.text, bare.line, bare.column, bare.endLine, bare.end], ['PWL(0 0 1m 5)', 1, 8, 4, 7]);
+  const paired = read('YPDE pde1 a b zmod\n+ region={name = reg1,\n+ xlo=0}\n').cards[0]!.tokens[3]!;
+  assert.deepEqual([paired.class, paired.text, paired.line, paired.column, paired.endLine, paired.end], ['pair', 'region={name = reg1, xlo=0}', 2, 2, 3, 8]);
+  const open = error('V1 in 0 PWL(0 0\n  indented comment\nR1 a b 1k\n');
+  assert.deepEqual([open.code, open.line, open.found.text, open.cards], ['unterminated-group', 1, '(', ['V1:V in 0']], 'a comment line and then no + leaves the group open; the card in progress is kept up to the error');
 });
 
 // --- Directives (RG §2.1.15–16, §2.1.28, §2.1.12, §2.1.37): .INCL, quoted file names, .LIB file entry, .PREPROCESS, .GLOBAL_PARAM ----

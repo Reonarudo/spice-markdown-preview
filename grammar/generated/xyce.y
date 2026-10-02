@@ -9,7 +9,7 @@
  * wording. The codes every SPICE dialect shares:
  *   orphan-continuation   a `+` line with no card before it to continue
  *   not-an-element        a line that is neither an element nor a directive
- *   unterminated-group    a `(` or `{` with no closing bracket on its line
+ *   unterminated-group    a `(` or `{` whose closing bracket comes neither on its line nor on a `+` line continuing it
  * Anything else is a plain syntax error reported with what was found and what was expected.
  */
   /* from grammar/spice/parser.y: options */
@@ -78,7 +78,7 @@ nodes
 
 node_words
   : %empty                  { json_nodes_closed(out); }
-  | node_words WORD         { json_token(out, "word", $2, @2.first_line, @2.first_column, @2.last_column); }
+  | node_words WORD         { json_token(out, "word", $2, @2.first_line, @2.first_column, @2.last_line, @2.last_column); }
   ;
 
   /* from grammar/spice/parser.y: tail */
@@ -88,10 +88,10 @@ tokens
   ;
 
 token
-  : WORD             { json_token(out, "word", $1, @1.first_line, @1.first_column, @1.last_column); }
-  | KEYWORD          { json_token(out, "keyword", $1, @1.first_line, @1.first_column, @1.last_column); }
-  | GROUP            { json_token(out, "group", $1, @1.first_line, @1.first_column, @1.last_column); }
-  | key EQUALS value { json_pair(out, $1, $3, @1.first_line, @1.first_column, @3.last_column); }
+  : WORD             { json_token(out, "word", $1, @1.first_line, @1.first_column, @1.last_line, @1.last_column); }
+  | KEYWORD          { json_token(out, "keyword", $1, @1.first_line, @1.first_column, @1.last_line, @1.last_column); }
+  | GROUP            { json_token(out, "group", $1, @1.first_line, @1.first_column, @1.last_line, @1.last_column); }
+  | key EQUALS value { json_pair(out, $1, $3, @1.first_line, @1.first_column, @3.last_line, @3.last_column); }
   | UNTERMINATED     { static const char *expected[] = { "group" }; coded_error(out, scanner, "unterminated-group", &@1, "unterminated group", expected, 1); YYABORT; }
   ;
 

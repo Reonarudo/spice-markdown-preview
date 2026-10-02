@@ -44,6 +44,12 @@ static void put_span(struct json *j, int line, int column, int end) {
   puts_(j, ",\"end\":"); put_int(j, end);
 }
 
+/* A token's span; `endLine` only when the token runs onto a later line. */
+static void put_token_span(struct json *j, int line, int column, int end_line, int end) {
+  put_span(j, line, column, end);
+  if (end_line != line) { puts_(j, ",\"endLine\":"); put_int(j, end_line); }
+}
+
 void json_init(struct json *j) {
   free(j->buf);
   memset(j, 0, sizeof *j);
@@ -116,27 +122,27 @@ void json_directive(struct json *j, char *name, int line, int column, int end) {
   free(name);
 }
 
-static void open_token(struct json *j, const char *class, const char *text, int line, int column, int end) {
+static void open_token(struct json *j, const char *class, const char *text, int line, int column, int end_line, int end) {
   open_tokens(j);
   if (j->tokens++) put(j, ",", 1);
   puts_(j, "{\"class\":"); put_string(j, class);
   puts_(j, ",\"text\":"); put_string(j, text);
-  put_span(j, line, column, end);
+  put_token_span(j, line, column, end_line, end);
 }
 
-void json_token(struct json *j, const char *class, char *text, int line, int column, int end) {
+void json_token(struct json *j, const char *class, char *text, int line, int column, int end_line, int end) {
   if (j->failed || !j->in_card) { free(text); return; }
   /* A `.model` card keeps its bare words — name, type, flags such as `pchan` — and drops parameters below. */
   if (j->model && j->tokens == 1) {
     char *paren = strchr(text, '(');
     if (paren) { end -= (int)strlen(paren); *paren = 0; }
   }
-  open_token(j, class, text, line, column, end);
+  open_token(j, class, text, line, column, end_line, end);
   put(j, "}", 1);
   free(text);
 }
 
-void json_pair(struct json *j, char *key, char *value, int line, int column, int end) {
+void json_pair(struct json *j, char *key, char *value, int line, int column, int end_line, int end) {
   if (j->failed || !j->in_card) { free(key); free(value); return; }
   if (j->model) {
     char lowered[8] = "";
@@ -146,7 +152,7 @@ void json_pair(struct json *j, char *key, char *value, int line, int column, int
   size_t n = strlen(key) + strlen(value) + 2;
   char *joined = malloc(n);
   snprintf(joined, n, "%s=%s", key, value);
-  open_token(j, "pair", joined, line, column, end);
+  open_token(j, "pair", joined, line, column, end_line, end);
   puts_(j, ",\"key\":"); put_string(j, key);
   puts_(j, ",\"value\":"); put_string(j, value);
   put(j, "}", 1);

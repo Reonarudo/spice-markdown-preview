@@ -277,7 +277,7 @@ function structuralError(error: ParserError, file: string, anchor: Position['anc
     case 'not-an-element':
       return new ParseError(`"${error.found.text}" is not an element name. Element names start with a letter, e.g. R1.${hint}`, position);
     case 'unterminated-group':
-      return new ParseError(`The ${error.found.text} opened here is not closed on its line.${hint}`, position);
+      return new ParseError(`The ${error.found.text} opened here is not closed.${hint}`, position);
     default: {
       const found = error.found.class === 'newline' ? 'end of line' : error.found.class === 'end of file' ? 'end of file' : `${error.found.class} "${error.found.text}"`;
       const expected = error.expected.length > 1 ? `${error.expected.slice(0, -1).join(', ')} or ${error.expected.at(-1)}` : error.expected[0] ?? 'something else';
@@ -945,15 +945,26 @@ function solveCount(form: Form, nodes: number): number | undefined {
 
 /**
  * How many tokens the parser unwrapped from a parenthesised node list. The cards do not say where
- * it closed, so the closing bracket is found in the line: the list opens after the name and closes
- * on the same line (ADR 0008).
+ * it closed, so the closing bracket is found in the text between one token and the next: the list
+ * opens after the name and closes on the same line or on a `+` line continuing it (ADR 0008).
  */
 function closedNodeCount(card: Card): number {
   const { parsed, lines } = card;
-  const line = lines[parsed.line - 1] ?? '';
-  const open = line.indexOf('(', parsed.end);
-  const close = line.indexOf(')', open);
-  return parsed.tokens.filter((token) => token.line === parsed.line && token.column < close).length;
+  let from = { line: parsed.line, column: parsed.end };
+  for (const [index, token] of parsed.tokens.entries()) {
+    if (textBetween(lines, from, token).includes(')')) return index;
+    from = { line: token.endLine ?? token.line, column: token.end };
+  }
+  return parsed.tokens.length;
+}
+
+/** The source text from one position to another, later one — across lines when they differ. */
+function textBetween(lines: string[], from: { line: number; column: number }, to: { line: number; column: number }): string {
+  if (to.line === from.line) return (lines[from.line - 1] ?? '').slice(from.column, to.column);
+  const pieces = [(lines[from.line - 1] ?? '').slice(from.column)];
+  for (let line = from.line + 1; line < to.line; line++) pieces.push(lines[line - 1] ?? '');
+  pieces.push((lines[to.line - 1] ?? '').slice(0, to.column));
+  return pieces.join('\n');
 }
 
 /**

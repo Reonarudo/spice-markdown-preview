@@ -71,7 +71,9 @@ test('+ continues the previous card, with comment and blank lines allowed betwee
   const output = read('V1 in 0\n* between\n\n+ PWL(0 0 1m 5)\n+ Rser=1\n');
   assert.deepEqual(output.cards.map(compact), ['V1:V in 0 PWL(0 0 1m 5) P:Rser=1']);
   assert.deepEqual(output.cards[0]!.tokens.map((t) => t.line), [1, 1, 4, 5]);
-  assert.equal(error('V1 in 0 PWL(0 0\n+ 1m 5)\n').code, 'unterminated-group', 'a group must close on its line, as in every SPICE dialect');
+  const continued = read('V1 in 0 PWL(0 0\n+ 1m 5)\n').cards[0]!.tokens[2]!;
+  assert.deepEqual([continued.text, continued.line, continued.endLine, continued.end], ['PWL(0 0 1m 5)', 1, 2, 7], 'a group may close on a + line, as in every SPICE dialect');
+  assert.equal(error('V1 in 0 PWL(0 0\nR1 a b 1k\n').code, 'unterminated-group', 'but not on a line that is not a continuation');
 });
 
 test('a trailing \\\\ does not continue the line: it is a word, and the next line stands alone', () => {
