@@ -87,6 +87,7 @@ test('splice replaces only what lies between the markers and refuses a README wi
 });
 
 test('the committed README table is byte-identical to a fresh generation from the catalogue', () => {
-  const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
+  // A Windows checkout reads the README with CRLF line endings; the generator writes LF.
+  const readme = readFileSync(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8').replaceAll('\r\n', '\n');
   assert.equal(splice(readme, section()), readme, 'README.md is stale: run npm run readme:table');
 });
