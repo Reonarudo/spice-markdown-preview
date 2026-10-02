@@ -45,3 +45,31 @@ VEE 0 vee 15
 R1 in out 10k
 Q1 out in
 ```
+
+## Dialects
+
+```spice {dialect="pspice" caption="A NAND latch on the digital supplies (PSpice)" align="center"}
+U1 NAND(2) $G_DPWR $G_DGND set qb q D_00 IO_STD
+U2 NAND(2) $G_DPWR $G_DGND rst q qb D_00 IO_STD
+U_SET STIM(1,1) $G_DPWR $G_DGND set IO_STM 0s 1 10ns 0 20ns 1
+U_RST STIM(1,1) $G_DPWR $G_DGND rst IO_STM 0s 1 30ns 0 40ns 1
+```
+
+```spice {dialect="ltspice" caption="An RC filter into a Schmitt trigger (LTspice)" align="center"}
+V1 in 0 SIN(0 1 1k)
+R1 in n1 10k
+C1 n1 0 100n
+A1 n1 0 0 0 0 0 out 0 SCHMITT Vt=0.5 Vh=0.1
+RL out 0 10k
+```
+
+```spice {dialect="spectre" caption="A CMOS inverter with vdd global (Spectre)" align="center"}
+global 0 vdd
+V1 (vdd 0) vsource dc=1.8
+Vin (in 0) vsource type=pulse val0=0 val1=1.8
+M1 (out in vdd vdd) pch w=2u l=180n
+M2 (out in 0 0) nch w=1u l=180n
+C1 (out 0) capacitor c=10f
+model nch bsim4 type=n
+model pch bsim4 type=p
+```

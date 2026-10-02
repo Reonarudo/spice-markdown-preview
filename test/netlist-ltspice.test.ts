@@ -61,9 +61,9 @@ test('@ is a two-node FRA block and & a four-node FRA probe block', () => {
 });
 
 // 5. `A` always has eight terminals and a keyword model; `U` is a three-node RC line.
-test('A takes eight nodes and is titled by its function keyword; U is an RC line', () => {
+test('A takes eight nodes and is titled by its function keyword, which its value leaves out; U is an RC line', () => {
   const [a, u] = parts('A1 in1 in2 0 0 0 0 out 0 AND\nU1 a b 0 urcmod L=1m\n.model urcmod URC');
-  assert.deepEqual([a!.type, a!.title, pins(a).join(' '), a!.value], ['ltspice-function', 'AND', '1=in1 2=in2 3=0 4=0 5=0 6=0 7=out 8=0', 'AND']);
+  assert.deepEqual([a!.type, a!.title, pins(a).join(' '), a!.value], ['ltspice-function', 'AND', '1=in1 2=in2 3=0 4=0 5=0 6=0 7=out 8=0', '']);
   assert.deepEqual([u!.type, pins(u).join(' ')], ['urc-line', 'n1=a n2=b common=0']);
 });
 

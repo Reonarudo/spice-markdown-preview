@@ -943,7 +943,7 @@ function resolveElement(card: Card, context: Context): Resolved {
   const slots = expandTerminals(form, matched, pairs, solvedCount(card, ref, type, form, count));
 
   // The tail: what follows the nodes, kept as the value string; a block titled by its master
-  // (a subcircuit name) leaves that out of the value, as today.
+  // (a subcircuit name) or by its keyword (`NAND(2)`, `SCHMITT`) leaves that out of the value.
   const next = tokens.find((token) => !nodeTokens.includes(token) && token !== matched);
   // A form that took every positional token leaves its model to a pair: HSPICE `S … MNAME=`.
   if (type.tail === 'model' && nameToken === undefined && form.nodesEnd !== 'all-positional' && next?.class !== 'word') {
@@ -953,8 +953,10 @@ function resolveElement(card: Card, context: Context): Resolved {
     throw new ParseError(`${ref} needs a value after its nodes.${hint}`, end(card));
   }
   const modelName = type.tail === 'model' ? (nameToken ?? next)!.text : undefined;
-  const titledByMaster = type.draw !== 'none' && 'block' in type.draw && type.draw.block.title === 'master';
-  const value = tokens.filter((token) => !nodeTokens.includes(token) && !(titledByMaster && token === nameToken)).map((token) => token.text).join(' ');
+  const blockTitle = type.draw !== 'none' && 'block' in type.draw ? type.draw.block.title : undefined;
+  const titledByMaster = blockTitle === 'master';
+  const titledByKeyword = blockTitle === 'keyword' || blockTitle === 'keyword-with-arguments';
+  const value = tokens.filter((token) => !nodeTokens.includes(token) && !(titledByMaster && token === nameToken) && !(titledByKeyword && token === matched)).map((token) => token.text).join(' ');
   return { typeId, type, form, ...(matched ? { matched } : {}), nodeTokens, slots, ...(nameToken ? { nameToken } : {}), ...(model ? { model } : {}), ...(modelName !== undefined ? { modelName } : {}), value, parameters: {} };
 }
 

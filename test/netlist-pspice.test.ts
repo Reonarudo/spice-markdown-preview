@@ -59,7 +59,7 @@ test('B is a GaAsFET, Z an IGBT, N a digital input and O a digital output, all b
 });
 
 // 4. `U` is a digital primitive: two supply pins, then the signal pins the type and its numbers say (RG p.349–428).
-test('U primitives take their supply pins and the signal pins their type says; the title is the type with its arguments', () => {
+test('U primitives take their supply pins and the signal pins their type says; the title is the type with its arguments, left out of the value', () => {
   const found = parts([
     'U1 NAND(2) $G_DPWR $G_DGND a b y D_00 IO_STD',
     'U2 JKFF(1) $G_DPWR $G_DGND 3 5 200 3 3 10 2 D_293ASTD IO_STD',
@@ -69,12 +69,12 @@ test('U primitives take their supply pins and the signal pins their type says; t
     'U6 INV $G_DPWR $G_DGND a y D_04 IO_STD'
   ].join('\n'));
   assert.deepEqual(found.map((part) => [part.ref, part.type, part.title, pins(part).join(' '), part.value]), [
-    ['U1', 'digital-gate', 'NAND(2)', 'DPWR=$g_dpwr DGND=$g_dgnd in1=a in2=b out=y', 'NAND(2) D_00 IO_STD'],
-    ['U2', 'digital-flip-flop', 'JKFF(1)', 'DPWR=$g_dpwr DGND=$g_dgnd PRE=3 CLR=5 CLK̅=200 J1=3 K1=3 Q1=10 Q̅1=2', 'JKFF(1) D_293ASTD IO_STD'],
-    ['U3', 'digital-gate-array', 'NANDA(2,4)', 'DPWR=$g_dpwr DGND=$g_dgnd in1=i1 in2=i2 in3=i3 in4=i4 in5=i5 in6=i6 in7=i7 in8=i8 out1=o1 out2=o2 out3=o3 out4=o4', 'NANDA(2,4) D_00 IO_STD'],
-    ['U4', 'digital-pin-delay', 'PINDLY(1,0,0)', 'DPWR=$g_dpwr DGND=$g_dgnd in1=fq out1=fqd', 'PINDLY (1,0,0) IO_STD'],
-    ['U5', 'digital-stimulus', 'STIM(1,1)', 'DPWR=$g_dpwr DGND=$g_dgnd out1=s', 'STIM( 1, 1 ) IO_STM'],
-    ['U6', 'digital-gate', 'INV', 'DPWR=$g_dpwr DGND=$g_dgnd in=a out=y', 'INV D_04 IO_STD']
+    ['U1', 'digital-gate', 'NAND(2)', 'DPWR=$g_dpwr DGND=$g_dgnd in1=a in2=b out=y', 'D_00 IO_STD'],
+    ['U2', 'digital-flip-flop', 'JKFF(1)', 'DPWR=$g_dpwr DGND=$g_dgnd PRE=3 CLR=5 CLK̅=200 J1=3 K1=3 Q1=10 Q̅1=2', 'D_293ASTD IO_STD'],
+    ['U3', 'digital-gate-array', 'NANDA(2,4)', 'DPWR=$g_dpwr DGND=$g_dgnd in1=i1 in2=i2 in3=i3 in4=i4 in5=i5 in6=i6 in7=i7 in8=i8 out1=o1 out2=o2 out3=o3 out4=o4', 'D_00 IO_STD'],
+    ['U4', 'digital-pin-delay', 'PINDLY(1,0,0)', 'DPWR=$g_dpwr DGND=$g_dgnd in1=fq out1=fqd', 'IO_STD'],
+    ['U5', 'digital-stimulus', 'STIM(1,1)', 'DPWR=$g_dpwr DGND=$g_dgnd out1=s', 'IO_STM'],
+    ['U6', 'digital-gate', 'INV', 'DPWR=$g_dpwr DGND=$g_dgnd in=a out=y', 'D_04 IO_STD']
   ]);
 });
 
@@ -229,7 +229,7 @@ test('the NAND latch deck: optional pins given or left off, a JK flip-flop with 
   assert.deepEqual(pins(by('X_U1B')), ['A=qb', 'B=rst', 'Y=q', 'DPWR=$g_dpwr', 'DGND=$g_dgnd']);
   assert.equal(by('X_U1B').value, 'PARAMS: MNTYMXDLY=2 IO_LEVEL=1');
   assert.deepEqual(pins(by('U_FF')), ['DPWR=$g_dpwr', 'DGND=$g_dgnd', 'PRE=$d_hi', 'CLR=$d_hi', 'CLK̅=clk', 'J1=q', 'K1=qb', 'Q1=fq', 'Q̅1=fqb']);
-  assert.deepEqual([by('U_SET').title, by('U_SET').value], ['STIM(1,1)', 'STIM(1,1) IO_STM 0s 1 10ns 0 20ns 1']);
+  assert.deepEqual([by('U_SET').title, by('U_SET').value], ['STIM(1,1)', 'IO_STM 0s 1 10ns 0 20ns 1']);
   assert.deepEqual([by('U_DLY').title, pins(by('U_DLY')).slice(2)], ['PINDLY(1,0,0)', ['in1=fq', 'out1=fq_d']]);
 });
 

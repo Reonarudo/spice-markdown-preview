@@ -14,7 +14,8 @@ import { dirname, join, resolve } from 'node:path';
 /** [file name, preview scroll offset in CSS pixels]. */
 const FRAMES = [
   ['schematics', 0],
-  ['caption-and-error', 560]
+  ['caption-and-error', 560],
+  ['dialects', 1300]
 ];
 const WIDTH = 1357;
 const HEIGHT = 768;
@@ -80,6 +81,10 @@ try {
   await page.keyboard.press('Meta+Home');
   await page.waitForTimeout(500);
   await mkdir('media/screenshots', { recursive: true });
+  // The preview follows the editor's scroll position while it opens; start every run from its top.
+  await page.mouse.move(WIDTH * 0.75, HEIGHT / 2);
+  await page.mouse.wheel(0, -100000);
+  await page.waitForTimeout(1500);
   let scrolled = 0;
   for (const [file, offset] of FRAMES) {
     // Scroll the preview with the wheel, over its right-hand half of the window.

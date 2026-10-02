@@ -11,3 +11,6 @@ permission is needed.
   inverter.
 - `caption-and-error.jpg`: the inverter's caption, an op-amp block, and a netlist
   error pointing at its column.
+- `dialects.jpg`: two fences naming their dialect — a PSpice NAND latch on the
+  `$G_DPWR`/`$G_DGND` supplies, drawn with net labels, and an LTspice `A` Schmitt
+  trigger. The demo's Spectre inverter follows them, below the frame.

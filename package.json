@@ -1,6 +1,6 @@
 {
   "name": "spice-schematic-preview",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "displayName": "SPICE Schematic Preview",
   "description": "Draws SPICE netlists as circuit schematics in VS Code's built-in Markdown preview",
   "keywords": [
@@ -94,7 +94,8 @@
     "test": "node --import tsx --test test/*.test.ts",
     "build": "node scripts/build.mjs",
     "grammars:compose": "tsx scripts/grammars/compose.ts",
-    "grammars": "npm run grammars:compose && sh scripts/grammars.sh",
+    "grammars": "npm run grammars:compose && npm run readme:table && sh scripts/grammars.sh",
+    "readme:table": "tsx scripts/readme-table.ts",
     "vscode:prepublish": "npm run build",
     "package": "vsce package --no-dependencies",
     "test:extension": "node scripts/test-extension.mjs",

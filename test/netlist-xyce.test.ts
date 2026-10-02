@@ -79,7 +79,7 @@ test('a Y device named like an element letter is still named by its second token
 // 4. `U` is a digital gate with its supply pins first; `P` a port; `A` and `N` are not elements (RG §2.3.28, §2.3.11; disagreements 7–9).
 test('U gates take DPWR and DGND then their inputs and output by type, NOT included; P is a two-node port', () => {
   const [and, inv, dff, p] = parts('U1 AND(2) $GVDD 0 a b y dmod\nUINV NOT $GVDD 0 y yb dmod\nU2 DFF $GVDD 0 preb clrb clk d q qb dmod\nP1 in 0 port=1 Z0=50\n.MODEL dmod DIG');
-  assert.deepEqual([and!.type, and!.kind, and!.title, pins(and).join(' '), and!.value], ['digital-gate', 'block', 'AND(2)', 'DPWR=$gvdd DGND=0 in1=a in2=b out=y', 'AND(2) dmod']);
+  assert.deepEqual([and!.type, and!.kind, and!.title, pins(and).join(' '), and!.value], ['digital-gate', 'block', 'AND(2)', 'DPWR=$gvdd DGND=0 in1=a in2=b out=y', 'dmod']);
   assert.deepEqual([inv!.title, pins(inv).join(' ')], ['NOT', 'DPWR=$gvdd DGND=0 in=y out=yb']);
   assert.deepEqual([dff!.type, dff!.title, pins(dff).join(' ')], ['digital-flip-flop', 'DFF', 'DPWR=$gvdd DGND=0 PRE=preb CLR=clrb CLK=clk D=d Q=q Q̅=qb']);
   assert.deepEqual([p!.type, p!.title, pins(p).join(' '), p!.value], ['port', 'port', '+=in -=0', 'port=1 Z0=50']);

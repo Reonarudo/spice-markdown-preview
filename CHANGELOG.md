@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 — 2026-10-02
 
 - Blocks place their pins where the element catalogue says: inputs on the left,
   outputs on the right, supply pins (`DPWR`/`DGND`, IBIS `nd_pu`/`nd_pd`) on the
@@ -73,6 +73,10 @@
   through, `statistics` and model bin groups skipped; analyses skipped by their
   master; `*spectre:` lines in SPICE mode. A model card now keeps its `type`
   pair in every dialect, so every vendored module was rebuilt.
+- A block titled by its keyword — a PSpice or Xyce `U NAND(2)`, an LTspice `A … SCHMITT` —
+  no longer repeats that keyword in the value text under it.
+- The README gains a table of every element type and how each dialect spells it, generated
+  from the element catalogue (`npm run readme:table`) and checked by the tests.
 
 ## 0.1.0 — 2026-09-30
 
