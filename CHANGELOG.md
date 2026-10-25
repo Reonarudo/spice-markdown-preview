@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.0 — 2026-10-25
+
+- Schematics are drawn by [spice-renderer](https://github.com/Reonarudo/spice-renderer)
+  1.0.0, the library that also draws SPICE on reonarudo.github.io, instead of a
+  copy inside the extension: the same six dialect parsers, catalogue, symbols and
+  layout, shipped under the VSIX's `node_modules`. **Requires VS Code 1.101 or
+  later**; older versions stay on 0.2.0.
+- A `dialect` attribute that is not a dialect is an error naming the six, instead
+  of being dropped in favour of the `spice.dialect` setting.
+- A file that `.include` or `.lib` names but that cannot be read here — in
+  Restricted Mode, from an unsaved document, outside a local workspace folder — is
+  an error at the include, as a missing file already was, instead of a note.
+  Reasons are worded by the renderer's file reader (`file not found`, `symbolic
+  links are not followed`).
+- The schematic paints itself (strokes, fills, fonts as presentation attributes);
+  the preview stylesheet adds only the white card. Its width is set from its
+  `viewBox`, so it keeps its size.
+- Changing `spice.layoutTimeout` restarts the layout worker with the new limit,
+  the old one drawing until it is ready, and retries schematics that timed out.
+  **SPICE: Refresh Included Files** also retries them.
+- Every fence is prepared before it is drawn. A fence seen for the first time
+  shows *Reading the netlist…*; an edited one keeps its previous drawing until the
+  new one is ready.
+
 ## 0.2.0 — 2026-10-02
 
 - Blocks place their pins where the element catalogue says: inputs on the left,

@@ -41,15 +41,9 @@ test('an unknown alignment is dropped and the rest is honoured', () => {
   assert.match(diagnostics[0]!, /middle/);
 });
 
-test('a dialect is matched in any case, with no aliases, and an unknown one falls back to the setting', () => {
-  for (const [written, read] of [['ngspice', 'ngspice'], ['LTspice', 'ltspice'], ['PSPICE', 'pspice'], ['HSpice', 'hspice'], ['Xyce', 'xyce'], ['Spectre', 'spectre']]) {
-    assert.deepEqual(parseAttributes(`spice {dialect="${written}"}`), { attributes: { dialect: read }, diagnostics: [] }, written);
-  }
-  for (const unknown of ['spectre-spice', 'ltspice-xvii', 'ng spice', 'spice', '']) {
-    const { attributes, diagnostics } = parseAttributes(`spice {dialect="${unknown}" alt="kept"}`);
-    assert.deepEqual(attributes, { alt: 'kept' }, unknown);
-    assert.equal(diagnostics.length, 1, unknown);
-    assert.match(diagnostics[0]!, /Unknown dialect .*spice\.dialect/, unknown);
+test('a dialect is kept as written, for the renderer to check', () => {
+  for (const written of ['ngspice', 'LTspice', 'spectre-spice', 'nope', '']) {
+    assert.deepEqual(parseAttributes(`spice {dialect="${written}"}`), { attributes: { dialect: written }, diagnostics: [] }, written);
   }
 });
 

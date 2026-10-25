@@ -116,5 +116,3 @@ dist/
 /CONTEXT.md
 /docs/adr/
 
-# Intermediate C and objects written by scripts/grammars.sh; only vendor/parsers/ is committed
-/build/

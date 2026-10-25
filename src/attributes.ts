@@ -1,5 +1,3 @@
-import { publicDialect, type PublicDialect } from './dialect';
-
 export type Alignment = 'left' | 'center' | 'right';
 
 export interface FenceAttributes {
@@ -7,8 +5,11 @@ export interface FenceAttributes {
   caption?: string;
   class?: string;
   align?: Alignment;
-  /** The dialect the fence is read in; absent means the setting decides. */
-  dialect?: PublicDialect;
+  /**
+   * The dialect the fence is read in, as written; absent means the setting decides. The renderer
+   * checks it: a name that is not a dialect fails the fence, naming the six.
+   */
+  dialect?: string;
 }
 
 export interface ParsedAttributes {
@@ -75,17 +76,7 @@ export function parseAttributes(info: string): ParsedAttributes {
       attributes.align = value as Alignment;
       continue;
     }
-    if (key === 'dialect') {
-      // Dropped, not read as ngspice: the fence falls back to the setting (the naming decision).
-      const dialect = publicDialect(value);
-      if (!dialect) {
-        diagnostics.push(`Unknown dialect ${JSON.stringify(value)}; using the spice.dialect setting.`);
-        continue;
-      }
-      attributes.dialect = dialect;
-      continue;
-    }
-    attributes[key as 'alt' | 'caption' | 'class'] = value;
+    attributes[key as 'alt' | 'caption' | 'class' | 'dialect'] = value;
   }
   return { attributes, diagnostics };
 }

@@ -1,48 +1,82 @@
 /**
- * Read the files that `.include` and `.lib` name, for the Markdown preview.
+ * Prepare `spice` fences for the Markdown preview: read the netlist in its dialect and load the
+ * files its `.include` and `.lib` cards name, through the renderer's `prepare` (ADR 0002).
  *
- * Ported from the gnuplot-markdown-preview data loader (`src/documents.ts`, `src/dataLoader.ts`),
- * whose rules it keeps: files are read only in a trusted workspace, only for a saved Markdown
- * document inside a local workspace folder, only by paths relative to that document that stay
- * inside the folder, never through a symlink, and never over the size limits. Errors never
- * reveal an absolute path. See ADR 0004.
- *
- * Unlike gnuplot's, the cache holds files rather than rendered fences, so a fence resolves its
- * includes synchronously from the cache and typing in it never reloads anything.
+ * The editor's rules decide whether files may be read at all: only in a trusted workspace, only for
+ * a saved Markdown document inside a local workspace folder (ADR 0004). Reading itself — paths
+ * relative to the document that stay inside the folder, never through a symlink, never over the
+ * size limits, never a file that changes mid-read — is the renderer's `nodeFileReader`, rooted at
+ * that folder. Errors never reveal an absolute path.
  */
 import * as vscode from 'vscode';
-import { createHash } from 'node:crypto';
-import { lstat, realpath } from 'node:fs/promises';
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
-import { closure, type CachedFile } from './include-closure';
-import { includeReferences } from './netlist';
-import type { Includes } from './renderer';
-import type { DialectId } from './catalogue/types';
+import { dirname, resolve, sep } from 'node:path';
+import type { FileReader, Prepared } from '@reonarudo/spice-renderer';
 
-/** A single included file may be this large: vendor model libraries run to several megabytes. */
-export const MAX_FILE_BYTES = 8 * 1024 * 1024;
-/** All cached files together may be this large; the oldest are dropped beyond it. */
+/** What this module needs from spice-renderer, passed in because the library is loaded at activation. */
+export interface Library {
+  prepare: typeof import('@reonarudo/spice-renderer').prepare;
+  nodeFileReader: typeof import('@reonarudo/spice-renderer').nodeFileReader;
+}
+
+interface Entry {
+  readonly document: string;
+  /** Absolute paths of every file the reader was asked for, found or not, so a watcher event can invalidate the entry. */
+  readonly paths: Set<string>;
+  bytes: number;
+  prepared?: Prepared;
+  error?: string;
+}
+
+/** All prepared fences' included files together may be this large: vendor model libraries run to megabytes. */
 const MAX_CACHE_BYTES = 64 * 1024 * 1024;
+const MAX_ENTRIES = 512;
+const MAX_PENDING = 8;
 
+/** A reader that refuses every file with one reason; netlists that include nothing never call it. */
+const refuse = (error: string): FileReader => ({ read: async () => ({ error }) });
 
-/** A dialect's parser in this process: loading, usable, or why it never will be. */
-type ParserState = 'loading' | 'ready' | { error: string };
+/**
+ * The VS Code file reader adapter (ADR 0002 decision 5): the editor-only rules first, then the
+ * library's reader rooted at the document's workspace folder.
+ */
+function readerFor(library: Library, document: vscode.Uri | undefined, record: (path: string) => void): FileReader {
+  if (!vscode.workspace.isTrusted) return refuse('files are read only in a trusted workspace');
+  if (!document || document.scheme === 'untitled') return refuse('save the Markdown document in a workspace folder first');
+  const folder = vscode.workspace.getWorkspaceFolder(document)?.uri;
+  if (!folder) return refuse('the Markdown document is not in a workspace folder');
+  if (document.scheme !== 'file' || folder.scheme !== 'file') return refuse('files are read only from a local folder');
+  const reader = library.nodeFileReader({ root: folder.fsPath, document: document.fsPath });
+  return {
+    async read(key, options) {
+      record(resolve(dirname(document.fsPath), key));
+      const result = await reader.read(key, options);
+      // The library's wording is about a site's content root; here the root is the workspace folder.
+      return 'error' in result && result.error === 'the file is outside the content root'
+        ? { error: 'it is outside the Markdown document’s workspace folder' }
+        : result;
+    }
+  };
+}
 
+function currentDocument(env: unknown): vscode.Uri | undefined {
+  const candidate = (env as { currentDocument?: unknown } | undefined)?.currentDocument;
+  return candidate instanceof vscode.Uri ? candidate : undefined;
+}
+
+/**
+ * Prepared render inputs per document, dialect and fence body. `prepare` is asynchronous and the
+ * fence rule is not (ADR 0010 decision 4): a fence seen for the first time starts preparing and is
+ * reported as not ready, and the preview is refreshed once it settles.
+ */
 export class IncludeFiles implements vscode.Disposable {
-  /** Keyed by absolute path; Map order is load order, oldest first. */
-  private readonly cache = new Map<string, CachedFile>();
-  private readonly loading = new Set<string>();
-  private readonly parsers = new Map<DialectId, ParserState>();
+  private readonly entries = new Map<string, Entry>();
   private readonly subscriptions: vscode.Disposable[] = [];
   private bytes = 0;
-  private timer: ReturnType<typeof setTimeout> | undefined;
+  private pending = 0;
   private disposed = false;
+  private timer: ReturnType<typeof setTimeout> | undefined;
 
-  /**
-   * `loadParser` is the host's own copy of the worker's loader (ADR 0008): finding a fence's
-   * includes means reading it, and reading it needs its dialect's parser in this process too.
-   */
-  constructor(private readonly loadParser: (dialect: DialectId) => Promise<void>) {
+  constructor(private readonly library: Library) {
     const watcher = vscode.workspace.createFileSystemWatcher('**/*');
     const changed = (uri: vscode.Uri): void => this.invalidate(uri);
     this.subscriptions.push(
@@ -57,129 +91,85 @@ export class IncludeFiles implements vscode.Disposable {
           changed(file.newUri);
         }
       }),
+      vscode.workspace.onDidCloseTextDocument((document) => {
+        for (const [key, entry] of this.entries) if (entry.document === document.uri.toString()) this.remove(key);
+      }),
       vscode.workspace.onDidChangeWorkspaceFolders(() => this.clear()),
-      vscode.workspace.onDidGrantWorkspaceTrust(() => this.clear()),
-      vscode.commands.registerCommand('spice.refreshIncludes', () => this.clear())
+      vscode.workspace.onDidGrantWorkspaceTrust(() => this.clear())
     );
   }
 
   /**
-   * Load a dialect's parser for reading includes here, once. Resolves with why it could not be
-   * loaded, or `undefined`; a dialect that failed is not asked for again while the process runs.
+   * The render input for a fence read in `dialect`, `undefined` while it is being prepared, or a
+   * message when the cache of included files is full.
    */
-  async ensure(dialect: DialectId): Promise<string | undefined> {
-    const state = this.parsers.get(dialect);
-    if (state === 'ready') return undefined;
-    if (state && state !== 'loading') return state.error;
-    this.parsers.set(dialect, 'loading');
-    let outcome: ParserState;
-    try {
-      await this.loadParser(dialect);
-      outcome = 'ready';
-    } catch (error) {
-      outcome = { error: error instanceof Error ? error.message : String(error) };
+  prepare(source: string, env: unknown, dialect: string): Prepared | string | undefined {
+    const document = currentDocument(env);
+    const key = JSON.stringify([document?.toString() ?? '', dialect, source]);
+    const found = this.entries.get(key);
+    if (found) {
+      // Re-insert so Map order tracks recency and the first key is the least recently used.
+      this.entries.delete(key);
+      this.entries.set(key, found);
+      return found.error ?? found.prepared;
     }
-    this.parsers.set(dialect, outcome);
-    return outcome === 'ready' ? undefined : outcome.error;
-  }
-
-  /**
-   * The files a fence includes, when all are loaded; `undefined` while some are still loading —
-   * or while the dialect's parser is — in which case the preview is refreshed once they are. When
-   * files cannot be read here at all, the set says why, and the fence draws without them.
-   */
-  prepare(source: string, env: unknown, dialect: DialectId = 'ngspice'): Includes | undefined {
-    const unavailable = (reason: string): Includes => ({ files: {}, unavailable: reason, identity: `unavailable:${reason}` });
-    const parser = this.parsers.get(dialect);
-    if (parser !== 'ready') {
-      if (parser !== 'loading') {
-        if (parser) return unavailable(parser.error);
-        void this.ensure(dialect).then(() => this.refresh());
-      }
+    if (this.pending >= MAX_PENDING) {
+      this.refresh();
       return undefined;
     }
-    if (includeReferences(source, '', dialect).length === 0) return { files: {}, identity: '' };
-    if (!vscode.workspace.isTrusted) return unavailable('files are read only in a trusted workspace');
-    const document = (env as { currentDocument?: unknown } | undefined)?.currentDocument;
-    if (!(document instanceof vscode.Uri) || document.scheme === 'untitled') {
-      return unavailable('save the Markdown document in a workspace folder first');
-    }
-    const folder = vscode.workspace.getWorkspaceFolder(document);
-    if (!folder) return unavailable('the Markdown document is not in a workspace folder');
-    if (document.scheme !== 'file' || folder.uri.scheme !== 'file') {
-      return unavailable('files are read only from a local folder');
-    }
-    const base = dirname(document.fsPath);
-    const root = folder.uri.fsPath;
-    const found = closure(source, (key) => this.touch(resolve(base, key)), dialect);
-    if (found.status === 'ready') return { ...found.set, identity: `${base}\u0000${found.identity}` };
-    for (const key of found.keys) void this.load(root, base, key);
+    if (this.entries.size >= MAX_ENTRIES) this.remove(this.entries.keys().next().value!);
+
+    const entry: Entry = { document: document?.toString() ?? '', paths: new Set(), bytes: 0 };
+    this.entries.set(key, entry);
+    this.pending++;
+    const reader = readerFor(this.library, document, (path) => entry.paths.add(path));
+    void this.library.prepare(source, { reader, dialect }).then((prepared) => {
+      if (this.disposed || this.entries.get(key) !== entry) return;
+      const bytes = prepared.files.reduce((sum, file) => sum + ('text' in file ? file.text.length : 0), 0);
+      if (this.bytes + bytes > MAX_CACHE_BYTES) {
+        entry.error = 'The included files of open documents exceed the 64 MiB cache. ' +
+          'Close unused Markdown documents and run SPICE: Refresh Included Files.';
+        return;
+      }
+      entry.bytes = bytes;
+      this.bytes += bytes;
+      entry.prepared = prepared;
+    }, (error: unknown) => {
+      // `prepare` rejects only for programmer errors; this fence alone shows it.
+      if (this.entries.get(key) === entry) entry.error = error instanceof Error ? error.message : 'The netlist could not be prepared.';
+    }).finally(() => {
+      this.pending--;
+      this.refresh();
+    });
     return undefined;
   }
 
-  /** A cached file, marked most recently used. */
-  private touch(path: string): CachedFile | undefined {
-    const file = this.cache.get(path);
-    if (file) {
-      this.cache.delete(path);
-      this.cache.set(path, file);
-    }
-    return file;
-  }
-
-  private async load(root: string, base: string, key: string): Promise<void> {
-    const path = resolve(base, key);
-    if (this.loading.has(path)) return;
-    this.loading.add(path);
-    let file: CachedFile;
-    try {
-      const text = await readContained(root, path);
-      const bytes = Buffer.byteLength(text);
-      file = { text, bytes, digest: createHash('sha256').update(text).digest('hex') };
-    } catch (error) {
-      const message = describe(error, root);
-      file = { error: message, bytes: 0, digest: `error:${message}` };
-    } finally {
-      this.loading.delete(path);
-    }
-    if (this.disposed) return;
-    this.store(path, file);
+  /** Forget every prepared fence, so included files are read again, and redraw. */
+  clear(): void {
+    this.entries.clear();
+    this.bytes = 0;
     this.refresh();
   }
 
-  private store(path: string, file: CachedFile): void {
-    this.remove(path);
-    this.cache.set(path, file);
-    this.bytes += file.bytes;
-    for (const [oldest, cached] of this.cache) {
-      if (this.bytes <= MAX_CACHE_BYTES || oldest === path) break;
-      this.bytes -= cached.bytes;
-      this.cache.delete(oldest);
+  private remove(key: string): void {
+    const entry = this.entries.get(key);
+    if (entry) {
+      this.bytes -= entry.bytes;
+      this.entries.delete(key);
     }
   }
 
-  private remove(path: string): boolean {
-    const cached = this.cache.get(path);
-    if (!cached) return false;
-    this.bytes -= cached.bytes;
-    this.cache.delete(path);
-    return true;
-  }
-
-  /** Forget a changed file, or everything under a changed folder, and redraw what used it. */
+  /** Forget the fences that read a changed file, or anything under a changed folder, and redraw them. */
   private invalidate(uri: vscode.Uri): void {
     if (uri.scheme !== 'file') return;
     let changed = false;
-    for (const path of [...this.cache.keys()]) {
-      if (path === uri.fsPath || path.startsWith(uri.fsPath + sep)) changed = this.remove(path) || changed;
+    for (const [key, entry] of this.entries) {
+      if ([...entry.paths].some((path) => path === uri.fsPath || path.startsWith(uri.fsPath + sep))) {
+        this.remove(key);
+        changed = true;
+      }
     }
     if (changed) this.refresh();
-  }
-
-  private clear(): void {
-    this.cache.clear();
-    this.bytes = 0;
-    this.refresh();
   }
 
   /** Ask open previews to render again, at most once per burst of loads. */
@@ -195,55 +185,7 @@ export class IncludeFiles implements vscode.Disposable {
     this.disposed = true;
     if (this.timer) clearTimeout(this.timer);
     for (const subscription of this.subscriptions) subscription.dispose();
-    this.cache.clear();
+    this.entries.clear();
+    this.bytes = 0;
   }
-}
-
-/** Whether `path` is strictly inside `root`. */
-export function inside(root: string, path: string): boolean {
-  const rel = relative(root, path);
-  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
-}
-
-class ReadError extends Error {}
-
-/**
- * Read a text file that must lie inside `root`, reached through no symlink, no larger than the
- * limit — checked before the read and again after it, so that a file swapped mid-read is refused.
- */
-async function readContained(root: string, path: string): Promise<string> {
-  if (!inside(root, path)) throw new ReadError('it is outside the Markdown document’s workspace folder');
-  const canonicalRoot = await realpath(root);
-  const check = async (): Promise<void> => {
-    let cursor = root;
-    for (const part of relative(root, path).split(sep)) {
-      cursor = resolve(cursor, part);
-      if ((await lstat(cursor)).isSymbolicLink()) throw new ReadError('symlinked paths are not followed');
-    }
-    if (!inside(canonicalRoot, await realpath(path))) throw new ReadError('it resolves outside the workspace folder');
-  };
-  await check();
-  const uri = vscode.Uri.file(path);
-  const before = await vscode.workspace.fs.stat(uri);
-  if (before.type !== vscode.FileType.File) throw new ReadError('it is not a file');
-  if (before.size > MAX_FILE_BYTES) throw new ReadError(`it is larger than ${MAX_FILE_BYTES / 1024 / 1024} MB`);
-  const bytes = await vscode.workspace.fs.readFile(uri);
-  await check();
-  const after = await vscode.workspace.fs.stat(uri);
-  if (after.size !== before.size || after.mtime !== before.mtime || bytes.length > MAX_FILE_BYTES) {
-    throw new ReadError('it changed while it was being read; save it again or run SPICE: Refresh Included Files');
-  }
-  if (bytes.includes(0)) throw new ReadError('it is not a text file');
-  return new TextDecoder('utf-8').decode(bytes);
-}
-
-/** An author-facing reason, never carrying an absolute path from the host. */
-function describe(error: unknown, root: string): string {
-  if (error instanceof ReadError) return error.message;
-  const code = (error as { code?: string }).code;
-  if (code === 'ENOENT' || code === 'FileNotFound' || code === 'EntryNotFound') return 'the file does not exist';
-  if (code === 'EACCES' || code === 'EPERM' || code === 'NoPermissions') return 'access is denied';
-  if (code === 'EISDIR' || code === 'FileIsADirectory') return 'it is not a file';
-  const message = error instanceof Error ? error.message : '';
-  return message && !message.includes(root) && !message.includes(sep) ? message : 'the file is unavailable';
 }

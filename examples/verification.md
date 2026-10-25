@@ -61,8 +61,9 @@ R1 y 0 1k
 
 Expect, in a trusted workspace with this file saved inside it: Q1 is a PNP,
 taken from `included/models.lib`, and R7 (4k7) comes from `included/stage.cir`.
-Edit either file and save: the schematic follows. In Restricted Mode, Q1 is an
-NPN and the output channel says the files are read only in a trusted workspace.
+Edit either file and save: the schematic follows. In Restricted Mode, the fence
+is an error at its first include: `included/models.lib could not be read: files
+are read only in a trusted workspace`.
 
 ```spice
 .include "included/models.lib"

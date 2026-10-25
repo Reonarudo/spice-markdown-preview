@@ -1,9 +1,5 @@
 **
 !dist/**
-!vendor/parsers/*.cjs
-!vendor/parsers/SHA256SUMS
-!vendor/parsers/provenance.json
-!licenses/**
 !package.json
 !README.md
 !CHANGELOG.md
@@ -12,3 +8,12 @@
 !media/icon.png
 !media/preview.css
 !media/screenshots/*.jpg
+# The renderer library and its dependencies, installed by vsce from the production tree
+# (ADR 0010). Only files provably unused at runtime are left out: type declarations, source
+# maps, and the elkjs builds the renderer never loads — it requires `lib/elk.bundled.js`, which
+# is self-contained, so `elk-worker.js`, `elk-worker.min.js` and `main.js` stay out (`elk-api.js`
+# is kept: it is small, and the typings name it). The packaged-VSIX host test is the guard. vsce
+# lets any negation win over any ignore, so the trim is written into the negations themselves.
+!node_modules/!(elkjs)/**/!(*.d.ts|*.map)
+!node_modules/elkjs/{package.json,LICENSE.md,README.md}
+!node_modules/elkjs/lib/{elk.bundled.js,elk-api.js}

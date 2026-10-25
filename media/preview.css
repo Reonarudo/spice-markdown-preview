@@ -3,52 +3,12 @@ svg.spice {
   max-width: 100%;
   height: auto;
   /* A white card in every theme, like the sibling extensions: schematics are black line art,
-     and the padding and rounding make the white read as a deliberate figure in dark themes. */
+     and the padding and rounding make the white read as a deliberate figure in dark themes.
+     The drawing paints itself (strokes, fills, fonts); only the card is presentation here. */
   background: #fff;
   border-radius: 6px;
   padding: 8px;
   box-sizing: border-box;
-  /* Every rule below is scoped to svg.spice: these class names are generic, and the preview
-     is shared with the rest of the document. */
-  stroke: #000;
-  fill: none;
-}
-
-svg.spice text {
-  fill: #000;
-  stroke: none;
-  font: bold 10px "Courier New", Courier, monospace;
-}
-
-svg.spice .nodelabel {
-  text-anchor: middle;
-}
-
-svg.spice .endlabel {
-  text-anchor: end;
-}
-
-svg.spice .title,
-svg.spice .pinlabel {
-  font-weight: normal;
-}
-
-svg.spice .symbol {
-  stroke-width: 2;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-
-svg.spice .connect,
-svg.spice .wire {
-  stroke-width: 1;
-  stroke-linecap: round;
-}
-
-svg.spice .detail,
-svg.spice .junction {
-  fill: #000;
-  stroke-linejoin: round;
 }
 
 .spice-figure {

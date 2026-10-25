@@ -1,58 +1,84 @@
 import type { ExtensionContext } from 'vscode';
 import type MarkdownItConstructor from 'markdown-it';
 type MarkdownIt = InstanceType<typeof MarkdownItConstructor>;
-import { Uri, window, workspace } from 'vscode';
-import { createPreview } from './preview';
+import { commands, Uri, window, workspace } from 'vscode';
+import { createPreview, type Preview } from './preview';
 import { IncludeFiles } from './include-files';
-import { parserLoader } from './parser/modules';
-import { DEFAULT_DIALECT, DIALECT_NAMES, publicDialect, type PublicDialect } from './dialect';
+import { createRestartable, type Restartable } from './runtimes';
+
+let runtime: Restartable | undefined;
 
 export async function activate(context: ExtensionContext): Promise<{ extendMarkdownIt(md: MarkdownIt): MarkdownIt }> {
   // Unrecognised fence attributes and the netlist reader's notes never surface in the preview
   // (ADR 0002); they are reported here so an author who suspects a typo has somewhere to look.
   const channel = window.createOutputChannel('SPICE Schematic Preview');
   context.subscriptions.push(channel);
-  // The host finds a fence's includes by reading it with the dialect's parser (ADR 0008), so each
-  // dialect's module is loaded here too, beside the worker's own copy — the default one now, the
-  // others at their first fence. A module that will not load is reported once; the worker reports
-  // the same failure on every fence.
-  const files = new IncludeFiles(parserLoader(context.asAbsolutePath('vendor/parsers')));
-  context.subscriptions.push(files);
-  const failure = await files.ensure(DEFAULT_DIALECT);
-  if (failure) channel.appendLine(failure);
-  const reported = new Set<string>();
-  const preview = await createPreview(context.asAbsolutePath('dist'), (line) => channel.appendLine(line), {
-    timeout: () => layoutTimeout(),
-    includes: (source, env, dialect) => files.prepare(source, env, dialect),
-    dialect: (env) => settingDialect(env, (note) => {
-      // One note per bad value, not one per fence per keystroke.
-      if (!reported.has(note)) channel.appendLine(note);
-      reported.add(note);
-    })
-  });
-  context.subscriptions.push({ dispose: () => preview.dispose() });
-  // A cached timeout would otherwise outlive the budget it was measured against, and a cached
-  // drawing the dialect it was read in.
-  context.subscriptions.push(workspace.onDidChangeConfiguration((change) => {
-    if (change.affectsConfiguration('spice.layoutTimeout') || change.affectsConfiguration('spice.dialect')) preview.clear();
-  }));
+  const log = (line: string) => channel.appendLine(line);
+
+  let preview: Preview;
+  try {
+    // Required here, not imported, so that a library that fails to load lands in this `try`
+    // instead of failing activation. esbuild leaves it external (ADR 0010).
+    const library: typeof import('@reonarudo/spice-renderer') = require('@reonarudo/spice-renderer');
+    const started = await createRestartable(library, { timeout: layoutTimeout() });
+    runtime = started;
+    const files = new IncludeFiles(library);
+    context.subscriptions.push(files);
+    const reported = new Set<string>();
+    preview = createPreview(started, log, {
+      prepare: (source, env, dialect) => files.prepare(source, env, dialect),
+      dialect: (env) => settingDialect(library.DIALECT_NAMES, env, (note) => {
+        // One note per bad value, not one per fence per keystroke.
+        if (!reported.has(note)) log(note);
+        reported.add(note);
+      })
+    });
+    context.subscriptions.push(
+      commands.registerCommand('spice.refreshIncludes', () => {
+        // Doubles as "retry": a cached timeout is forgotten along with the files.
+        preview.clear();
+        files.clear();
+      }),
+      workspace.onDidChangeConfiguration((change) => {
+        if (!change.affectsConfiguration('spice.layoutTimeout')) return;
+        // The old runtime lays out until the new one is ready; then cached timeouts, measured
+        // against the old budget, are forgotten.
+        started.restart({ timeout: layoutTimeout() }).then(
+          (tookOver) => { if (tookOver) preview.clear(); },
+          (error) => log(`SPICE renderer failed to restart: ${describe(error)}`)
+        );
+      })
+    );
+  } catch (error) {
+    log(`SPICE renderer failed to load: ${describe(error)}`);
+    // Every fence renders as unavailable; nothing is prepared, and `unavailable` is never cached.
+    preview = createPreview({
+      render: () => ({ status: 'unavailable', reason: 'the renderer failed to load; see the "SPICE Schematic Preview" output' })
+    }, log, {
+      prepare: (source) => ({ source, dialect: 'ngspice', files: [], identity: '' })
+    });
+  }
   return { extendMarkdownIt: (md) => preview.extendMarkdownIt(md) };
+}
+
+export async function deactivate(): Promise<void> {
+  await runtime?.dispose();
+  runtime = undefined;
 }
 
 /**
  * The `spice.dialect` setting as it applies to the previewed document, whose URI VS Code puts in
  * markdown-it's `env`; `undefined`, with a note, when the value is not a dialect.
  */
-function settingDialect(env: unknown, note: (line: string) => void): PublicDialect | undefined {
+function settingDialect(names: readonly string[], env: unknown, note: (line: string) => void): string | undefined {
   const document = (env as { currentDocument?: unknown } | undefined)?.currentDocument;
   const value = workspace.getConfiguration('spice', document instanceof Uri ? document : undefined).get<unknown>('dialect');
   if (value === undefined) return undefined;
-  const dialect = publicDialect(value);
-  if (!dialect) {
-    note(`spice.dialect is ${JSON.stringify(value)}, which is not a dialect; reading as ${DEFAULT_DIALECT}. ` +
-      `Choose one of ${DIALECT_NAMES.join(', ')}.`);
-  }
-  return dialect;
+  const name = typeof value === 'string' ? value.trim().toLowerCase() : undefined;
+  if (name !== undefined && names.includes(name)) return name;
+  note(`spice.dialect is ${JSON.stringify(value)}, which is not a dialect; reading as ngspice. ` +
+    `Choose one of ${names.join(', ')}.`);
+  return undefined;
 }
 
 /** The configured budget in milliseconds, clamped to the range the setting declares. */
@@ -60,4 +86,8 @@ function layoutTimeout(): number {
   const seconds = workspace.getConfiguration('spice').get<number>('layoutTimeout', 3);
   const clamped = Number.isFinite(seconds) ? Math.min(60, Math.max(0.5, seconds)) : 3;
   return Math.round(clamped * 1000);
+}
+
+function describe(error: unknown): string {
+  return error instanceof Error ? error.stack ?? error.message : String(error);
 }
