@@ -68,6 +68,11 @@ test('a Markdown document renders schematics beside delegated fences, logging no
   assert.match(html, /<figure class="spice-figure"><svg [^>]*>[\s\S]*<\/svg><figcaption>RC low-pass<\/figcaption><\/figure>/);
   assert.match(html, /<pre>D1 needs 2 nodes; found 1\.\n\n2 │ D1 a\n         \^<\/pre>/);
   assert.match(html, /<pre><code class="language-cir">R1 left alone 1k/);
+  // The view toggle: one wrapper per claimed fence, the source view showing the fence as written.
+  assert.equal((html.match(/<div class="spice-fence code-line" data-line="\d+" data-fence-key="[0-9a-f]{8}"><button /g) ?? []).length, 4);
+  assert.match(html, /<\/figure><\/div><pre><code class="language-spice">V1 in 0 AC 1\nR1 in out 10k\nC1 out 0 100n\n<\/code><\/pre>\n<\/div>/);
+  assert.match(html, /<\/div>\n<\/div><pre><code class="language-spice">R1 a b 1k\nD1 a\n<\/code><\/pre>\n<\/div>/);
+  assert.equal((html.match(/<div class="spice-fence /g) ?? []).length, 4, 'the cir fence is not wrapped');
   assert.deepEqual(logged, [
     'Unknown attribute "algin"; ignored.',
     'Unknown attribute "algin"; ignored.',
@@ -140,6 +145,9 @@ test('a fence draws with its included files, and an unreadable one is an error a
   // A PNP: the emitter pin is the one on top, drawn with the arrow on the upper leg.
   assert.match(html, /<path d="m14,9 6,-1 -3,-5 z" class="detail"/);
   assert.match(html, /<pre>nowhere\.lib could not be read: file not found\n\n2 │ \.include nowhere\.lib\n {13}\^<\/pre>/);
+  // The source view is the fence as written: the include line, not the included file's contents.
+  assert.match(html, /<\/div><pre><code class="language-spice">\.include models\.lib\nQ1 c b e Q\nR1 c 0 1k\n<\/code><\/pre>\n<\/div>/);
+  assert.doesNotMatch(html, /language-spice">[^<]*\.model Q PNP/);
 }));
 
 test('a preparation message is shown in place of the schematic, escaped', () => {

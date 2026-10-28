@@ -48,3 +48,87 @@ svg.spice {
   opacity: .7;
   font-style: italic;
 }
+
+/* The view toggle (docs/source-toggle-spec.md in onnx-markdown-preview, section 6): every claimed
+   fence is wrapped, with its rendering shown and its source <pre> hidden until flipped. Nothing
+   here styles the <pre><code> itself: VS Code's markdown.css and highlight.css do. */
+.spice-fence {
+  position: relative;
+}
+
+.spice-fence > pre {
+  display: none;
+}
+
+.spice-fence[data-view="source"] > .spice-rendering {
+  display: none;
+}
+
+.spice-fence[data-view="source"] > pre {
+  display: block;
+}
+
+/* In source view VS Code's copy button, injected inside our <pre>, moves 36px inline-start so it
+   and the toggle share one row (8 + 28 + 8). Depends on VS Code's class name: accepted risk. */
+.spice-fence[data-view="source"] > pre > .code-block-copy-button {
+  right: 44px;
+}
+
+/* In a right-to-left container the toggle sits at the left, so the copy button keeps its place. */
+.spice-fence[data-view="source"]:dir(rtl) > pre > .code-block-copy-button {
+  right: 8px;
+}
+
+.spice-toggle {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, .35));
+  border-radius: 4px;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  cursor: pointer;
+  opacity: 1;
+  z-index: 1;
+}
+
+.spice-toggle:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.spice-toggle:active {
+  background: var(--vscode-toolbar-activeBackground);
+}
+
+.spice-toggle:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.spice-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.spice-toggle svg.spice-icon-code {
+  fill: currentColor;
+}
+
+/* The glyph names the view the click leads to. */
+.spice-toggle .spice-icon-graph {
+  display: none;
+}
+
+.spice-fence[data-view="source"] .spice-toggle .spice-icon-code {
+  display: none;
+}
+
+.spice-fence[data-view="source"] .spice-toggle .spice-icon-graph {
+  display: inline;
+}

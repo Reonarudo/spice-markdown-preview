@@ -116,3 +116,6 @@ dist/
 /CONTEXT.md
 /docs/adr/
 
+
+# Written by scripts/test-preview.mjs when a live check fails
+test-preview-failure.png

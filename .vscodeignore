@@ -7,6 +7,7 @@
 !THIRD_PARTY_NOTICES.md
 !media/icon.png
 !media/preview.css
+!media/preview.js
 !media/screenshots/*.jpg
 # The renderer library and its dependencies, installed by vsce from the production tree
 # (ADR 0010). Only files provably unused at runtime are left out: type declarations, source

@@ -16,7 +16,7 @@ try {
   const root = join(unpacked, 'extension');
   const library = 'node_modules/@reonarudo/spice-renderer';
   for (const path of [
-    'dist/extension.js', 'media/preview.css', 'media/icon.png', 'readme.md', 'LICENSE.txt', 'THIRD_PARTY_NOTICES.md',
+    'dist/extension.js', 'media/preview.css', 'media/preview.js', 'media/icon.png', 'readme.md', 'LICENSE.txt', 'THIRD_PARTY_NOTICES.md',
     `${library}/package.json`, `${library}/dist/index.js`, `${library}/dist/worker.js`, `${library}/dist/skin/symbols.svg`,
     ...['ngspice', 'ltspice', 'pspice', 'hspice', 'xyce', 'spectre', 'spectre-spice'].map((dialect) => `${library}/vendor/parsers/${dialect}.cjs`),
     `${library}/licenses/ELKJS-EPL-2.0.md`, `${library}/THIRD_PARTY_NOTICES.md`,

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.0 — 2026-10-28
+
+- Every schematic carries a view toggle in its top corner that flips the fence
+  between the schematic and its source text, highlighted as the preview highlights
+  any code block. The text is the fence as written: an `.include` line stays an
+  include line. A flipped fence stays flipped while the document is edited, after
+  *Markdown: Refresh Preview* and when the preview is reopened, and a flip made
+  while a fence is still being read survives the swap to its schematic. The toggle
+  is also present on error cards and on the *Reading the netlist…* placeholder. It
+  is a reader's control; no fence attribute presets it.
+- A preview script (`media/preview.js`) is contributed for the first time;
+  `npm run test:preview` exercises it in a live preview through Playwright.
+
 ## 0.3.0 — 2026-10-25
 
 - Schematics are drawn by [spice-renderer](https://github.com/Reonarudo/spice-renderer)

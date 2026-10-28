@@ -22,6 +22,7 @@ exports.run = async () => {
   const extension = vscode.extensions.getExtension('ReoX86.spice-schematic-preview');
   assert(extension, 'extension ReoX86.spice-schematic-preview is installed');
   assert.deepEqual(extension.packageJSON.contributes['markdown.previewStyles'], ['media/preview.css']);
+  assert.deepEqual(extension.packageJSON.contributes['markdown.previewScripts'], ['media/preview.js']);
   await extension.activate();
   await vscode.extensions.getExtension('vscode.markdown-language-features').activate();
   const render = (markdown) => vscode.commands.executeCommand('markdown.api.render', markdown);
@@ -29,7 +30,9 @@ exports.run = async () => {
 
   // A string has no slot: it shows the placeholder until it is prepared, then draws.
   const first = fence('spice', 'V9 in 0 5\nR9 in out 10k');
-  assert.match(await render(first), LOADING);
+  const loading = await render(first);
+  assert.match(loading, LOADING);
+  assert.match(loading, /<div class="spice-rendering"><div class="spice-loading" [\s\S]*?<\/div><pre><code class="language-spice" dir="auto">V9 in 0 5\nR9 in out 10k\n<\/code><\/pre>\n<\/div>/, 'the placeholder is wrapped and has its source view');
   await draw(first);
 
   // Schematics, and fences this extension must leave alone.
@@ -49,6 +52,17 @@ exports.run = async () => {
   // The drawing paints itself; the stylesheet only adds the card.
   assert.match(mixed, /<svg class="spice" [^>]*fill="none" stroke="#000"/);
 
+  // The view toggle's wrapper, and its source view delegated to VS Code's own fence rule: the
+  // `<pre>` carries VS Code's shell (`dir="auto"`, not the plugin's hand-built fallback) minus
+  // the scroll-sync class and line, which only the wrapper carries.
+  assert.match(mixed, /<div class="spice-fence code-line" data-line="0" data-fence-key="[0-9a-f]{8}"><button type="button" class="spice-toggle" aria-pressed="false" aria-label="Source view" title="Source view"><svg class="spice-icon-code"/);
+  assert.match(mixed, /<\/button><div class="spice-rendering"><svg class="spice" width="/);
+  assert.match(mixed, /<\/div><pre><code class="language-spice" dir="auto">V1 in 0 5\nR1 in out 10k\nC1 out 0 100n\n<\/code><\/pre>\n<\/div>/);
+  assert.match(mixed, /<\/div><pre><code class="language-spice" dir="auto">M1 out in vdd vdd pch\nM2 out in 0 0 nch\n\.model nch NMOS\n\.model pch PMOS\n<\/code><\/pre>\n<\/div>/);
+  assert.equal((mixed.match(/<div class="spice-fence /g) ?? []).length, 2, 'one wrapper per claimed fence, none for delegated ones');
+  assert.equal((mixed.match(/<pre><code class="language-spice" dir="auto">/g) ?? []).length, 2, 'no sync attributes on the source <code>');
+  for (const line of ['0', '6']) assert.equal((mixed.match(new RegExp(`data-line="${line}"`, 'g')) ?? []).length, 1, `one scroll-sync element for the fence at line ${line}`);
+
   // Attributes, escaping and a tolerated typo; netlist text is escaped too.
   const attributed = await draw(fence('spice {alt="A divider" caption="Figure 1: <divider>" align="center" algin="x" class="wide"}', 'R1 in out <b>1k</b>\nR2 out 0 1k'), /<svg class="spice wide" width="/);
   assert.match(attributed, /<figure class="spice-figure spice-align-center"><div role="img" aria-label="A divider"><svg class="spice wide" width="/);
@@ -60,6 +74,7 @@ exports.run = async () => {
   const broken = await draw('Before\n\n' + fence('spice', 'R1 a b 1k\nQ1 a') + '\nAfter', /spice-error/);
   assert.match(broken, /<div class="spice-error" role="alert"><pre>Q1 needs 3 nodes; found 1\.\n\n2 │ Q1 a\n         \^<\/pre><\/div>/);
   assert.match(broken, /<p\b[^>]*>After<\/p>/);
+  assert.match(broken, /<div class="spice-rendering"><div class="spice-error" role="alert">[\s\S]*?<\/div>\n<\/div><pre><code class="language-spice" dir="auto">R1 a b 1k\nQ1 a\n<\/code><\/pre>\n<\/div>/, 'the error card is wrapped and keeps its source view');
 
   // A circuit too dense to lay out times out promptly, and the next schematic still renders.
   const dense = fence('spice', mesh);

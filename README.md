@@ -420,6 +420,16 @@ tells the type from others sharing the letter. Spectre spells by master name. Ge
 
 ![An op-amp drawn as a labelled block in an inverting amplifier, and a netlist error pointing at its column](media/screenshots/caption-and-error.jpg)
 
+## Viewing the source
+
+Every schematic carries a small button in its top corner that flips the fence
+between the schematic and the fence's text, highlighted the way the preview shows
+any other code block. The text is the fence as written: an `.include` line stays
+an include line. A flipped fence stays flipped while you edit the document, after
+*Markdown: Refresh Preview*, and when the preview is reopened; flip it back to see
+the schematic again. The button is a reader's control: a fence cannot be written
+to open in source view.
+
 ## Errors and limits
 
 A netlist error is shown in place of the schematic, quoting the line with a caret
@@ -443,6 +453,7 @@ npm run lint            # tsc --noEmit
 npm test                # node --test, after building
 npm run package         # vsce package
 npm run test:package    # the VSIX inside a real VS Code
+npm run test:preview    # the view toggle in a live preview, through Playwright
 npm run screenshots     # regenerate media/screenshots from examples/demo.md
 ```
 

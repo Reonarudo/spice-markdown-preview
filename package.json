@@ -1,6 +1,6 @@
 {
   "name": "spice-schematic-preview",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "displayName": "SPICE Schematic Preview",
   "description": "Draws SPICE netlists as circuit schematics in VS Code's built-in Markdown preview",
   "keywords": [
@@ -46,6 +46,9 @@
     "markdown.markdownItPlugins": true,
     "markdown.previewStyles": [
       "media/preview.css"
+    ],
+    "markdown.previewScripts": [
+      "media/preview.js"
     ],
     "configuration": {
       "title": "SPICE Schematic Preview",
@@ -96,6 +99,8 @@
     "vscode:prepublish": "npm run build",
     "package": "vsce package",
     "test:extension": "node scripts/test-extension.mjs",
+    "pretest:preview": "npm run build",
+    "test:preview": "node scripts/test-preview.mjs",
     "test:package": "node scripts/test-package.mjs",
     "screenshots": "node scripts/screenshots.mjs"
   },
