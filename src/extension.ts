@@ -31,7 +31,8 @@ export async function activate(context: ExtensionContext): Promise<{ extendMarkd
         // One note per bad value, not one per fence per keystroke.
         if (!reported.has(note)) log(note);
         reported.add(note);
-      })
+      }),
+      bomStyle: (env) => setting('bomStyle', env)
     });
     context.subscriptions.push(
       commands.registerCommand('spice.refreshIncludes', () => {
@@ -71,14 +72,19 @@ export async function deactivate(): Promise<void> {
  * markdown-it's `env`; `undefined`, with a note, when the value is not a dialect.
  */
 function settingDialect(names: readonly string[], env: unknown, note: (line: string) => void): string | undefined {
-  const document = (env as { currentDocument?: unknown } | undefined)?.currentDocument;
-  const value = workspace.getConfiguration('spice', document instanceof Uri ? document : undefined).get<unknown>('dialect');
+  const value = setting('dialect', env);
   if (value === undefined) return undefined;
   const name = typeof value === 'string' ? value.trim().toLowerCase() : undefined;
   if (name !== undefined && names.includes(name)) return name;
   note(`spice.dialect is ${JSON.stringify(value)}, which is not a dialect; reading as ngspice. ` +
     `Choose one of ${names.join(', ')}.`);
   return undefined;
+}
+
+/** A `spice.*` setting as it applies to the document in markdown-it's `env`, unchecked. */
+function setting(name: string, env: unknown): unknown {
+  const document = (env as { currentDocument?: unknown } | undefined)?.currentDocument;
+  return workspace.getConfiguration('spice', document instanceof Uri ? document : undefined).get<unknown>(name);
 }
 
 /** The configured budget in milliseconds, clamped to the range the setting declares. */

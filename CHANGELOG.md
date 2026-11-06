@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0 — unreleased
+
+- Every schematic carries a second button beside the view toggle that flips the
+  fence to its **BOM view**: a table of the fence's parts, identical parts
+  aggregated into one row (quantity, references, type, value, and the included
+  file when the fence includes files). The rows come from spice-renderer 1.1.0
+  beside the schematic. A fence whose layout timed out, or whose layout failed
+  after the netlist was read, still shows its table.
+- New `spice.bomStyle` setting: `plain` (default), `compact` or `card`.
+- The preview script remembers three views per fence instead of two; flips stored
+  by 0.4.0 are read as source flips and rewritten on the next change. In source
+  view VS Code's copy button moves past both buttons.
+- The netlist reader's notes are logged for a timed-out fence too.
+- Schematics are drawn by spice-renderer 1.1.0.
+
 ## 0.4.0 — 2026-10-28
 
 - Every schematic carries a view toggle in its top corner that flips the fence

@@ -1,6 +1,6 @@
 {
   "name": "spice-schematic-preview",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "displayName": "SPICE Schematic Preview",
   "description": "Draws SPICE netlists as circuit schematics in VS Code's built-in Markdown preview",
   "keywords": [
@@ -75,6 +75,22 @@
           "scope": "resource",
           "markdownDescription": "The dialect `spice` fences are read in, unless a fence names its own with a `dialect` attribute. Takes effect on the next render."
         },
+        "spice.bomStyle": {
+          "type": "string",
+          "enum": [
+            "plain",
+            "compact",
+            "card"
+          ],
+          "enumDescriptions": [
+            "The preview's own table styling, level with the buttons (the default)",
+            "A dense full-width table below the buttons",
+            "The table on the schematic's white card, with a summary line"
+          ],
+          "default": "plain",
+          "scope": "resource",
+          "markdownDescription": "How the BOM view's table is drawn. Takes effect on the next render."
+        },
         "spice.layoutTimeout": {
           "type": "number",
           "default": 3,
@@ -105,7 +121,7 @@
     "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
-    "@reonarudo/spice-renderer": "https://github.com/Reonarudo/spice-renderer/releases/download/v1.0.0/reonarudo-spice-renderer-1.0.0.tgz"
+    "@reonarudo/spice-renderer": "file:../../markdown-renderers/spice-renderer/reonarudo-spice-renderer-1.1.0.tgz"
   },
   "devDependencies": {
     "@types/markdown-it": "14.2.0",

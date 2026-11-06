@@ -1,7 +1,7 @@
 import type MarkdownItConstructor from 'markdown-it';
 type MarkdownIt = InstanceType<typeof MarkdownItConstructor>;
 import type { Prepared, RenderResult } from '@reonarudo/spice-renderer';
-import { markdownPlugin } from './markdown';
+import { markdownPlugin, type ReadBomStyle } from './markdown';
 
 export interface Preview {
   extendMarkdownIt(md: MarkdownIt): MarkdownIt;
@@ -20,6 +20,11 @@ export interface PreviewOptions {
    * or not a dialect. A fence's own `dialect` attribute wins over it; without either, ngspice.
    */
   dialect?: (env: unknown) => string | undefined;
+  /**
+   * The `spice.bomStyle` setting for the document being previewed, as configured; the fence rule
+   * reads anything but `plain`, `compact` or `card` as `plain`, with a note.
+   */
+  bomStyle?: ReadBomStyle;
 }
 
 const DEFAULT_DIALECT = 'ngspice';
@@ -36,7 +41,8 @@ const MAX_RESULTS = 96;
  * not kept: it says nothing about the netlist.
  *
  * `log` receives what never reaches the preview (ADR 0002): attribute diagnostics, and the
- * netlist reader's notes — once per fresh render, labelled with the fence's first line.
+ * netlist reader's notes — once per fresh render, labelled with the fence's first line, from any
+ * outcome that carries them (a timeout or a layout failure keeps the parsed stage's notes).
  */
 export function createPreview(
   runtime: { render(input: Prepared): RenderResult },
@@ -51,8 +57,8 @@ export function createPreview(
       cache.delete(prepared.identity);
     } else {
       result = runtime.render(prepared);
-      if (result.status === 'success') for (const note of result.notes) log(`${label(prepared.source)}: ${note}`);
       if (result.status === 'unavailable') return result;
+      for (const note of result.notes ?? []) log(`${label(prepared.source)}: ${note}`);
     }
     cache.set(prepared.identity, result);
     if (cache.size > MAX_RESULTS) cache.delete(cache.keys().next().value!);
@@ -65,7 +71,7 @@ export function createPreview(
       if (prepared === undefined) return undefined;
       if (typeof prepared === 'string') return { status: 'failure', message: prepared };
       return render(prepared);
-    }, log),
+    }, log, options.bomStyle),
     clear: () => cache.clear()
   };
 }

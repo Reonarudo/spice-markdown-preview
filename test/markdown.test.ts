@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import MarkdownIt from 'markdown-it';
 import { markdownPlugin } from '../src/markdown';
-import type { RenderResult } from '@reonarudo/spice-renderer';
-import { rendering } from './helpers';
+import type { BomRow, RenderResult } from '@reonarudo/spice-renderer';
+import { bom, rendering } from './helpers';
 
-const schematic = (output = '<svg class="spice" viewBox="4 4 48 101"></svg>'): RenderResult => ({ status: 'success', output, notes: [] });
+const schematic = (output = '<svg class="spice" viewBox="4 4 48 101"></svg>', rows: BomRow[] = []): RenderResult => ({ status: 'success', output, bom: rows, notes: [] });
 const SIZED = '<svg class="spice" width="48px" viewBox="4 4 48 101"></svg>';
 
 const ICON_CODE = '<svg class="spice-icon-code" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">' +
@@ -14,7 +14,18 @@ const ICON_GRAPH = '<svg class="spice-icon-graph" viewBox="0 0 16 16" width="16"
   '<rect x="1.5" y="1.5" width="5" height="3.5" rx=".5"/><rect x="9.5" y="1.5" width="5" height="3.5" rx=".5"/><rect x="5.5" y="11" width="5" height="3.5" rx=".5"/>' +
   '<path d="M4 5v3h8V5M8 8v3"/></svg>';
 const TOGGLE = `<button type="button" class="spice-toggle" aria-pressed="false" aria-label="Source view" title="Source view">${ICON_CODE}${ICON_GRAPH}</button>`;
+const ICON_LIST = '<svg class="spice-icon-list" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.2">' +
+  '<circle cx="2.5" cy="4" r="1" fill="currentColor" stroke="none"/><circle cx="2.5" cy="8" r="1" fill="currentColor" stroke="none"/><circle cx="2.5" cy="12" r="1" fill="currentColor" stroke="none"/>' +
+  '<path d="M5.5 4h9M5.5 8h9M5.5 12h9"/></svg>';
+const BOM_BUTTON = `<button type="button" class="spice-bom-button" aria-pressed="false" aria-label="BOM view" title="BOM view">${ICON_LIST}${ICON_GRAPH}</button>`;
+const BUTTONS = BOM_BUTTON + TOGGLE;
 const LOADING = '<div class="spice-loading" role="status">Reading the netlist…</div>\n';
+const empty = (text: string) => `<div class="spice-bom-empty">${text}</div>`;
+const BOM_LOADING = '<div class="spice-bom-empty" role="status">Reading the netlist…</div>';
+const NO_PARTS = empty('No parts.');
+const NOT_READ = empty('The netlist did not read, so there are no parts.');
+const NOT_RUNNING = empty('The schematic renderer is not running, so there are no parts.');
+const slot = (content: string, style = 'plain') => `<div class="spice-bom spice-bom-${style}">${content}</div>`;
 
 test('claims exactly spice fences and passes the netlist through', () => {
   let seen = '';
@@ -52,11 +63,12 @@ test('a previously registered fence renderer still receives its fences, and supp
 
 // The DOM contract (docs/source-toggle-spec.md in onnx-markdown-preview, section 2): asserted
 // exactly once, here.
-test('every claimed fence is wrapped: toggle first, rendering slot, then the delegated source <pre>', () => {
+// Amended for SPICE by docs/bom-view-spec.md section 5: five children.
+test('every claimed fence is wrapped: BOM button, toggle, rendering slot, BOM slot, then the delegated source <pre>', () => {
   const md = markdownPlugin(new MarkdownIt(), () => schematic());
   assert.equal(md.render('```spice\nR1 a 0 1\n```'),
-    `<div class="spice-fence code-line" data-line="0" data-fence-key="997d4f82">${TOGGLE}` +
-    `<div class="spice-rendering">${SIZED}</div>` +
+    `<div class="spice-fence code-line" data-line="0" data-fence-key="997d4f82">${BUTTONS}` +
+    `<div class="spice-rendering">${SIZED}</div>${slot(NO_PARTS)}` +
     '<pre><code class="language-spice">R1 a 0 1\n</code></pre>\n</div>\n');
 });
 
@@ -104,31 +116,35 @@ test('the source view shows the fence as written: an include stays an include li
 test('an error card, a throwing renderer and the loading placeholder are wrapped like a schematic', () => {
   const failed = markdownPlugin(new MarkdownIt(), () => ({ status: 'failure', message: 'bad' }));
   assert.equal(failed.render('```spice\nR1 a 0 1\n```'),
-    `<div class="spice-fence code-line" data-line="0" data-fence-key="997d4f82">${TOGGLE}` +
-    '<div class="spice-rendering"><div class="spice-error" role="alert"><pre>bad</pre></div>\n</div>' +
+    `<div class="spice-fence code-line" data-line="0" data-fence-key="997d4f82">${BUTTONS}` +
+    '<div class="spice-rendering"><div class="spice-error" role="alert"><pre>bad</pre></div>\n</div>' + slot(NOT_READ) +
     '<pre><code class="language-spice">R1 a 0 1\n</code></pre>\n</div>\n');
   const threw = markdownPlugin(new MarkdownIt(), () => { throw new Error('boom'); });
   assert.equal(threw.render('```spice\nR1 a 0 1\n```'),
-    `<div class="spice-fence code-line" data-line="0" data-fence-key="997d4f82">${TOGGLE}` +
-    '<div class="spice-rendering"><div class="spice-error" role="alert"><pre>The schematic renderer failed: boom</pre></div>\n</div>' +
+    `<div class="spice-fence code-line" data-line="0" data-fence-key="997d4f82">${BUTTONS}` +
+    '<div class="spice-rendering"><div class="spice-error" role="alert"><pre>The schematic renderer failed: boom</pre></div>\n</div>' + slot(NOT_RUNNING) +
     '<pre><code class="language-spice">R1 a 0 1\n</code></pre>\n</div>\n');
   const loading = markdownPlugin(new MarkdownIt(), () => undefined);
   assert.equal(loading.render('```spice\nR1 a 0 1\n```'),
-    `<div class="spice-fence code-line" data-line="0" data-fence-key="997d4f82">${TOGGLE}` +
-    `<div class="spice-rendering">${LOADING}</div>` +
+    `<div class="spice-fence code-line" data-line="0" data-fence-key="997d4f82">${BUTTONS}` +
+    `<div class="spice-rendering">${LOADING}</div>${slot(BOM_LOADING)}` +
     '<pre><code class="language-spice">R1 a 0 1\n</code></pre>\n</div>\n');
 });
 
-test('a slot caches only the rendering: an edited fence keeps the old drawing but shows its new body in source view', () => {
-  let next: RenderResult | undefined = schematic('<svg class="spice"><text>old</text></svg>');
+test('a slot caches the rendering and the BOM: an edited fence keeps the old drawing and table but shows its new body in source view', () => {
+  let next: RenderResult | undefined = schematic('<svg class="spice"><text>old</text></svg>', [{ type: 'resistor', name: 'resistor', value: '1', references: [{ ref: 'R1', line: 1 }] }]);
   const md = markdownPlugin(new MarkdownIt(), () => next);
   const env = { currentDocument: { toString: () => 'a.md' } };
   md.render('```spice\nR1 a 0 1\n```', env);
   next = undefined;
   const html = md.render('```spice\nR1 a 0 1k\n```', env);
   assert.equal(html,
-    `<div class="spice-fence code-line" data-line="0" data-fence-key="129600ed">${TOGGLE}` +
+    `<div class="spice-fence code-line" data-line="0" data-fence-key="129600ed">${BUTTONS}` +
     '<div class="spice-rendering"><svg class="spice"><text>old</text></svg></div>' +
+    slot('<p class="spice-bom-summary" dir="auto">1 part in 1 row</p><table class="spice-bom-table"><thead><tr>' +
+      '<th scope="col" class="spice-bom-qty">Qty</th><th scope="col">References</th><th scope="col">Type</th><th scope="col">Value</th></tr></thead><tbody>' +
+      '<tr><td class="spice-bom-qty">1</td><td class="spice-bom-refs">R1</td><td class="spice-bom-type">resistor</td><td class="spice-bom-value">1</td></tr>' +
+      '</tbody></table>') +
     '<pre><code class="language-spice">R1 a 0 1k\n</code></pre>\n</div>\n');
 });
 
@@ -221,14 +237,165 @@ test('a fence not ready yet keeps its slot\'s last drawing; a new slot or a docu
   const md = markdownPlugin(new MarkdownIt(), () => next);
   const env = (name: string) => ({ currentDocument: { toString: () => name } });
   const two = '```spice\nR1 a 0 1\n```\n\n```spice\nR2 a 0 1\n```';
-  // Counted on the schematic's own class: the toggle ships two SVG glyphs per fence.
+  // Counted on the schematic's own class: the buttons ship SVG glyphs too.
   assert.equal((md.render(two, env('a.md')).match(/<svg class="spice"/g) ?? []).length, 2);
   next = undefined;
   assert.equal((md.render(two, env('a.md')).match(/<svg class="spice"/g) ?? []).length, 2, 'both slots keep their drawing');
-  assert.match(md.render(two, env('b.md')), /^<div class="spice-fence [^>]*><button [\s\S]*?<\/button><div class="spice-rendering"><div class="spice-loading" role="status">Reading the netlist…<\/div>/, 'another document has its own slots');
+  assert.match(md.render(two, env('b.md')), /^<div class="spice-fence [^>]*><button [\s\S]*?<\/button><button [\s\S]*?<\/button><div class="spice-rendering"><div class="spice-loading" role="status">Reading the netlist…<\/div>/, 'another document has its own slots');
   assert.match(md.render(two), /spice-loading/, 'no document, no slot');
   next = { status: 'failure', message: 'bad' };
   md.render(two, env('a.md'));
   next = undefined;
   assert.match(md.render(two, env('a.md')), /spice-error/, 'an error is remembered like a drawing');
+});
+
+// The BOM view (docs/bom-view-spec.md sections 3.5, 4 and 8).
+
+const reference = (ref: string, line: number, file?: string) => (file ? { ref, line, file } : { ref, line });
+const BRIDGE: BomRow[] = [
+  { type: 'vsource', name: 'voltage source', value: 'SIN(0 12 50)', references: [reference('VAC', 1)] },
+  { type: 'diode', name: 'diode', value: '1N4007', references: [reference('D1', 2), reference('D2', 3), reference('D3', 4), reference('D4', 5)] },
+  { type: 'capacitor', name: 'capacitor', value: '1000u', references: [reference('C1', 6)] },
+  { type: 'resistor', name: 'resistor', value: '1k', references: [reference('RL', 7)] }
+];
+const INCLUDES: BomRow[] = [
+  { type: 'resistor', name: 'resistor', value: '4k7', references: [reference('R7', 1, 'included/stage.cir')] },
+  { type: 'subcircuit', name: 'subcircuit', title: 'LM358', value: '', references: [reference('X1', 2)] },
+  { type: 'resistor', name: 'resistor', value: '1k m=2', references: [reference('R1', 3)] },
+  { type: 'resistor', name: 'resistor', value: '1k', references: [reference('R2', 4)] }
+];
+const HEAD = '<th scope="col" class="spice-bom-qty">Qty</th><th scope="col">References</th><th scope="col">Type</th><th scope="col">Value</th>';
+
+test('the BOM button: list and graph glyphs, a constant label, before the toggle', () => {
+  const md = markdownPlugin(new MarkdownIt(), () => schematic());
+  assert.ok(md.render('```spice\nR1 a 0 1\n```').includes(`data-fence-key="997d4f82">${BOM_BUTTON}${TOGGLE}<div class="spice-rendering">`));
+});
+
+test('the BOM table: a summary, one row per BOM row, quantity right-aligned, no File column without files', () => {
+  const md = markdownPlugin(new MarkdownIt(), () => schematic(undefined, BRIDGE));
+  assert.equal(bom(md.render('```spice\nVAC ac1 ac2 SIN(0 12 50)\n```')),
+    '<p class="spice-bom-summary" dir="auto">7 parts in 4 rows</p>' +
+    `<table class="spice-bom-table"><thead><tr>${HEAD}</tr></thead><tbody>` +
+    '<tr><td class="spice-bom-qty">1</td><td class="spice-bom-refs">VAC</td><td class="spice-bom-type">voltage source</td><td class="spice-bom-value">SIN(0 12 50)</td></tr>' +
+    '<tr><td class="spice-bom-qty">4</td><td class="spice-bom-refs">D1, D2, D3, D4</td><td class="spice-bom-type">diode</td><td class="spice-bom-value">1N4007</td></tr>' +
+    '<tr><td class="spice-bom-qty">1</td><td class="spice-bom-refs">C1</td><td class="spice-bom-type">capacitor</td><td class="spice-bom-value">1000u</td></tr>' +
+    '<tr><td class="spice-bom-qty">1</td><td class="spice-bom-refs">RL</td><td class="spice-bom-type">resistor</td><td class="spice-bom-value">1k</td></tr>' +
+    '</tbody></table>');
+});
+
+test('the File column appears when a row names a file; a title leads the Value; an empty tail with a title is the title alone', () => {
+  const md = markdownPlugin(new MarkdownIt(), () => schematic(undefined, INCLUDES));
+  assert.equal(bom(md.render('```spice\nX1 a b LM358\n```')),
+    '<p class="spice-bom-summary" dir="auto">4 parts in 4 rows</p>' +
+    `<table class="spice-bom-table"><thead><tr>${HEAD}<th scope="col">File</th></tr></thead><tbody>` +
+    '<tr><td class="spice-bom-qty">1</td><td class="spice-bom-refs">R7</td><td class="spice-bom-type">resistor</td><td class="spice-bom-value">4k7</td><td class="spice-bom-file">included/stage.cir</td></tr>' +
+    '<tr><td class="spice-bom-qty">1</td><td class="spice-bom-refs">X1</td><td class="spice-bom-type">subcircuit</td><td class="spice-bom-value">LM358</td><td class="spice-bom-file"></td></tr>' +
+    '<tr><td class="spice-bom-qty">1</td><td class="spice-bom-refs">R1</td><td class="spice-bom-type">resistor</td><td class="spice-bom-value">1k m=2</td><td class="spice-bom-file"></td></tr>' +
+    '<tr><td class="spice-bom-qty">1</td><td class="spice-bom-refs">R2</td><td class="spice-bom-type">resistor</td><td class="spice-bom-value">1k</td><td class="spice-bom-file"></td></tr>' +
+    '</tbody></table>');
+  const titled = markdownPlugin(new MarkdownIt(), () => schematic(undefined, [
+    { type: 'vcvs', name: 'voltage-controlled voltage source', title: 'VCVS', value: '100k', references: [reference('E1', 1)] },
+    { type: 'resistor', name: 'resistor', value: '', references: [reference('R1', 2, 'a.cir'), reference('R2', 3), reference('R3', 4, 'b.cir'), reference('R4', 5, 'a.cir')] }
+  ]));
+  const html = bom(titled.render('```spice\nE1 a 0 b 0 100k\n```'));
+  assert.match(html, /<td class="spice-bom-value">VCVS 100k<\/td>/);
+  assert.match(html, /<td class="spice-bom-refs">R1, R2, R3, R4<\/td><td class="spice-bom-type">resistor<\/td><td class="spice-bom-value"><\/td><td class="spice-bom-file">a\.cir, b\.cir<\/td>/);
+  assert.match(html, /<p class="spice-bom-summary" dir="auto">5 parts in 2 rows<\/p>/);
+});
+
+test('the opamp example: a subcircuit\'s title alone is its Value, and the supplies merge', () => {
+  const md = markdownPlugin(new MarkdownIt(), () => schematic(undefined, [
+    { type: 'vsource', name: 'voltage source', value: 'SIN(0 1 1k)', references: [reference('V1', 1)] },
+    { type: 'subcircuit', name: 'subcircuit', title: 'opamp', value: '', references: [reference('X1', 2), reference('X2', 5)] },
+    { type: 'resistor', name: 'resistor', value: '10k', references: [reference('R1', 3), reference('RL', 6)] },
+    { type: 'resistor', name: 'resistor', value: '47k', references: [reference('R2', 4)] },
+    { type: 'vsource', name: 'voltage source', value: '15', references: [reference('VCC', 7), reference('VEE', 8)] }
+  ]));
+  const html = bom(md.render('```spice\nX1 in mid vcc vee mid opamp\n```'));
+  assert.match(html, /<p class="spice-bom-summary" dir="auto">8 parts in 5 rows<\/p>/);
+  assert.match(html, /<tr><td class="spice-bom-qty">2<\/td><td class="spice-bom-refs">X1, X2<\/td><td class="spice-bom-type">subcircuit<\/td><td class="spice-bom-value">opamp<\/td><\/tr>/);
+  assert.match(html, /<tr><td class="spice-bom-qty">2<\/td><td class="spice-bom-refs">VCC, VEE<\/td><td class="spice-bom-type">voltage source<\/td><td class="spice-bom-value">15<\/td><\/tr>/);
+  assert.doesNotMatch(html, /File/);
+});
+
+test('the summary uses singulars at one', () => {
+  const md = markdownPlugin(new MarkdownIt(), () => schematic(undefined, [BRIDGE[1]!]));
+  assert.match(bom(md.render('```spice\nD1 a 0 D\n```')), /^<p class="spice-bom-summary" dir="auto">4 parts in 1 row<\/p>/);
+});
+
+test('every cell is text: markup in references, values, types and files is escaped', () => {
+  const md = markdownPlugin(new MarkdownIt(), () => schematic(undefined, [
+    { type: 'x', name: '<i>t</i>', title: '<u>', value: '<b>1k</b>', references: [reference('<R1>', 1, '<f>.cir')] }
+  ]));
+  const html = bom(md.render('```spice\nR1 a 0 1\n```'));
+  assert.doesNotMatch(html, /<b>|<i>|<u>|<R1>|<f>/);
+  assert.match(html, /&lt;R1&gt;.*&lt;i&gt;t&lt;\/i&gt;.*&lt;u&gt; &lt;b&gt;1k&lt;\/b&gt;.*&lt;f&gt;\.cir/);
+});
+
+test('empty states are chosen by rule: zero rows, no rows, renderer not running, loading', () => {
+  const sentence = (result: RenderResult | undefined) => bom(markdownPlugin(new MarkdownIt(), () => result).render('```spice\nR1 a 0 1\n```'));
+  assert.equal(sentence(schematic()), NO_PARTS);
+  assert.equal(sentence({ status: 'failure', message: 'bad', line: 1 }), NOT_READ);
+  assert.equal(sentence({ status: 'timeout', budget: 3000 }), NOT_READ);
+  assert.equal(sentence({ status: 'timeout', budget: 3000, bom: [], notes: [] }), NO_PARTS);
+  assert.equal(sentence({ status: 'unavailable', reason: 'gone' }), NOT_RUNNING);
+  assert.equal(sentence(undefined), BOM_LOADING);
+  assert.equal(bom(markdownPlugin(new MarkdownIt(), () => { throw new Error('boom'); }).render('```spice\nR1 a 0 1\n```')), NOT_RUNNING);
+});
+
+test('a timeout or layout failure that carries rows shows the table beside its error card', () => {
+  for (const result of [
+    { status: 'timeout', budget: 3000, bom: BRIDGE, notes: [] },
+    { status: 'failure', message: 'ELK failed', bom: BRIDGE, notes: [] }
+  ] as RenderResult[]) {
+    const html = markdownPlugin(new MarkdownIt(), () => result).render('```spice\nR1 a 0 1\n```');
+    assert.match(rendering(html), /spice-error/, result.status);
+    assert.match(bom(html), /<td class="spice-bom-refs">D1, D2, D3, D4<\/td>/, result.status);
+  }
+});
+
+test('the BOM style is a class on the BOM slot, read per render; absent or invalid is plain, reported once per value', () => {
+  const reported: string[] = [];
+  let style: unknown = 'compact';
+  const seen: unknown[] = [];
+  const md = markdownPlugin(new MarkdownIt(), () => schematic(), (m) => reported.push(m), (env) => { seen.push(env); return style; });
+  const env = { currentDocument: { toString: () => 'a.md' } };
+  assert.match(md.render('```spice\nR1 a 0 1\n```', env), /<div class="spice-bom spice-bom-compact">/);
+  assert.equal(seen[0], env);
+  style = 'card';
+  assert.match(md.render('```spice\nR1 a 0 1\n```', env), /<div class="spice-bom spice-bom-card">/);
+  style = undefined;
+  assert.match(md.render('```spice\nR1 a 0 1\n```', env), /<div class="spice-bom spice-bom-plain">/);
+  style = 3;
+  md.render('```spice\nR1 a 0 1\n```', env);
+  style = 'fancy';
+  assert.match(md.render('```spice\nR1 a 0 1\n```\n\n```spice\nR2 a 0 1\n```', env), /<div class="spice-bom spice-bom-plain">/);
+  md.render('```spice\nR1 a 0 1\n```', env);
+  assert.deepEqual(reported, ['spice.bomStyle "3" is not a BOM style; using plain', 'spice.bomStyle "fancy" is not a BOM style; using plain']);
+  assert.match(markdownPlugin(new MarkdownIt(), () => schematic()).render('```spice\nR1 a 0 1\n```'), /<div class="spice-bom spice-bom-plain">/);
+});
+
+test('a cached table takes a changed style on the next render', () => {
+  let next: RenderResult | undefined = schematic(undefined, BRIDGE);
+  let style = 'plain';
+  const md = markdownPlugin(new MarkdownIt(), () => next, undefined, () => style);
+  const env = { currentDocument: { toString: () => 'a.md' } };
+  md.render('```spice\nR1 a 0 1\n```', env);
+  next = undefined;
+  style = 'card';
+  const html = md.render('```spice\nR1 a 0 1k\n```', env);
+  assert.match(html, /<div class="spice-bom spice-bom-card"><p class="spice-bom-summary" dir="auto">7 parts in 4 rows<\/p>/);
+});
+
+test('the slot cache counts the rendering and the table toward its bound', () => {
+  // Two slots whose tables alone exceed the 16 M-character bound: the first is evicted.
+  const huge = 'x'.repeat(9 * 1024 * 1024);
+  let next: RenderResult | undefined = schematic('<svg class="spice"></svg>', [{ type: 'resistor', name: 'resistor', value: huge, references: [reference('R1', 1)] }]);
+  const md = markdownPlugin(new MarkdownIt(), () => next);
+  const env = { currentDocument: { toString: () => 'a.md' } };
+  const two = '```spice\nR1 a 0 1\n```\n\n```spice\nR2 a 0 1\n```';
+  md.render(two, env);
+  next = undefined;
+  const html = md.render(two, env);
+  assert.equal((html.match(/spice-loading/g) ?? []).length, 1, 'the older slot was evicted');
 });

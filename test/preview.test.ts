@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import MarkdownIt from 'markdown-it';
 import { createRuntime, prepare, type Prepared, type Runtime } from '@reonarudo/spice-renderer';
 import { createPreview, type PreviewOptions } from '../src/preview';
+import { bom } from './helpers';
 
 const document = [
   '```spice {caption="RC low-pass" algin="typo"}',
@@ -70,8 +71,12 @@ test('a Markdown document renders schematics beside delegated fences, logging no
   assert.match(html, /<pre><code class="language-cir">R1 left alone 1k/);
   // The view toggle: one wrapper per claimed fence, the source view showing the fence as written.
   assert.equal((html.match(/<div class="spice-fence code-line" data-line="\d+" data-fence-key="[0-9a-f]{8}"><button /g) ?? []).length, 4);
-  assert.match(html, /<\/figure><\/div><pre><code class="language-spice">V1 in 0 AC 1\nR1 in out 10k\nC1 out 0 100n\n<\/code><\/pre>\n<\/div>/);
-  assert.match(html, /<\/div>\n<\/div><pre><code class="language-spice">R1 a b 1k\nD1 a\n<\/code><\/pre>\n<\/div>/);
+  assert.match(html, /<\/figure><\/div><div class="spice-bom spice-bom-plain">.*?<\/table><\/div><pre><code class="language-spice">V1 in 0 AC 1\nR1 in out 10k\nC1 out 0 100n\n<\/code><\/pre>\n<\/div>/);
+  assert.match(html, /<\/div>\n<\/div><div class="spice-bom spice-bom-plain"><div class="spice-bom-empty">The netlist did not read, so there are no parts\.<\/div><\/div><pre><code class="language-spice">R1 a b 1k\nD1 a\n<\/code><\/pre>\n<\/div>/);
+  // The BOM view: the renderer's rows reach the table unchanged.
+  assert.match(bom(html), /<p class="spice-bom-summary" dir="auto">3 parts in 3 rows<\/p>/);
+  assert.match(bom(html), /<td class="spice-bom-qty">1<\/td><td class="spice-bom-refs">R1<\/td><td class="spice-bom-type">resistor<\/td><td class="spice-bom-value">10k<\/td>/);
+  assert.match(bom(html), /<td class="spice-bom-refs">V1<\/td><td class="spice-bom-type">voltage source<\/td><td class="spice-bom-value">AC 1<\/td>/);
   assert.equal((html.match(/<div class="spice-fence /g) ?? []).length, 4, 'the cir fence is not wrapped');
   assert.deepEqual(logged, [
     'Unknown attribute "algin"; ignored.',
@@ -83,15 +88,20 @@ test('a Markdown document renders schematics beside delegated fences, logging no
   assert.equal(logged.length, 4);
 }));
 
-test('timeouts are cached until the preview is cleared', () => withRuntime(100, async (runtime) => {
+test('timeouts are cached until the preview is cleared, and keep their rows and notes', () => withRuntime(100, async (runtime) => {
   let calls = 0;
+  const logged: string[] = [];
   const files = preparer();
-  const preview = createPreview({ render: (input) => { calls++; return runtime.render(input); } }, () => {}, { prepare: files.prepare });
+  const preview = createPreview({ render: (input) => { calls++; return runtime.render(input); } }, (line) => logged.push(line), { prepare: files.prepare });
   const md = preview.extendMarkdownIt(new MarkdownIt());
-  const slow = '```spice\n' + Array.from({ length: 200 }, (_, i) => `R${i} n${i % 37} n${(i * 7 + 3) % 41} 1k`).join('\n') + '\n```';
+  const slow = '```spice\n' + Array.from({ length: 200 }, (_, i) => `R${i} n${i % 37} n${(i * 7 + 3) % 41} 1k`).join('\n') + '\nK1 L1 L2 0.9\n```';
   md.render(slow);
   await files.settled();
-  assert.match(md.render(slow), /longer than 0\.1 s/);
+  const html = md.render(slow);
+  assert.match(html, /longer than 0\.1 s/);
+  // The parse finished inside the budget, so the table shows beside the timeout card.
+  assert.match(bom(html), /^<p class="spice-bom-summary" dir="auto">200 parts in 1 row<\/p>/);
+  assert.equal(logged.length, 1, `the timeout's note is logged: ${logged.join('; ')}`);
   assert.match(md.render(slow), /longer than 0\.1 s/);
   assert.equal(calls, 1, 'still cached');
   preview.clear();
@@ -149,6 +159,28 @@ test('a fence draws with its included files, and an unreadable one is an error a
   assert.match(html, /<\/div><pre><code class="language-spice">\.include models\.lib\nQ1 c b e Q\nR1 c 0 1k\n<\/code><\/pre>\n<\/div>/);
   assert.doesNotMatch(html, /language-spice">[^<]*\.model Q PNP/);
 }));
+
+test('an included file\'s parts share rows with the fence\'s and name their file', () => withRuntime(3000, async (runtime) => {
+  const files = preparer({ 'stage.cir': 'R7 c out 1k\n' });
+  const md = createPreview(runtime, () => {}, { prepare: files.prepare }).extendMarkdownIt(new MarkdownIt());
+  const fence = '```spice\n.include stage.cir\nR1 out 0 1K\n```';
+  md.render(fence);
+  await files.settled();
+  const html = bom(md.render(fence));
+  assert.match(html, /<th scope="col">File<\/th>/);
+  assert.match(html, /<td class="spice-bom-qty">2<\/td><td class="spice-bom-refs">R7, R1<\/td><td class="spice-bom-type">resistor<\/td><td class="spice-bom-value">1k<\/td><td class="spice-bom-file">stage\.cir<\/td>/);
+}));
+
+test('the BOM style is read per document from the bomStyle option', () => {
+  const seen: unknown[] = [];
+  const md = createPreview({ render: () => ({ status: 'success', output: '<svg class="spice"></svg>', bom: [], notes: [] }) }, () => {}, {
+    prepare: (source) => ({ source, dialect: 'ngspice', files: [], identity: '0'.repeat(64) }),
+    bomStyle: (env) => { seen.push(env); return (env as { style: string }).style; }
+  }).extendMarkdownIt(new MarkdownIt());
+  assert.match(md.render('```spice\nR1 a 0 1\n```', { style: 'card' }), /<div class="spice-bom spice-bom-card">/);
+  assert.match(md.render('```spice\nR1 a 0 1\n```', { style: 'compact' }), /<div class="spice-bom spice-bom-compact">/);
+  assert.deepEqual(seen, [{ style: 'card' }, { style: 'compact' }]);
+});
 
 test('a preparation message is shown in place of the schematic, escaped', () => {
   const md = createPreview({ render: () => assert.fail('not rendered') }, () => {}, {

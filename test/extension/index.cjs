@@ -55,8 +55,12 @@ exports.run = async () => {
   // The view toggle's wrapper, and its source view delegated to VS Code's own fence rule: the
   // `<pre>` carries VS Code's shell (`dir="auto"`, not the plugin's hand-built fallback) minus
   // the scroll-sync class and line, which only the wrapper carries.
-  assert.match(mixed, /<div class="spice-fence code-line" data-line="0" data-fence-key="[0-9a-f]{8}"><button type="button" class="spice-toggle" aria-pressed="false" aria-label="Source view" title="Source view"><svg class="spice-icon-code"/);
+  // Amended by docs/bom-view-spec.md section 5: the BOM button before the toggle, the BOM slot
+  // before the source <pre>.
+  assert.match(mixed, /<div class="spice-fence code-line" data-line="0" data-fence-key="[0-9a-f]{8}"><button type="button" class="spice-bom-button" aria-pressed="false" aria-label="BOM view" title="BOM view">[\s\S]*?<\/button><button type="button" class="spice-toggle" aria-pressed="false" aria-label="Source view" title="Source view"><svg class="spice-icon-code"/);
   assert.match(mixed, /<\/button><div class="spice-rendering"><svg class="spice" width="/);
+  assert.match(mixed, /<\/svg><\/div><div class="spice-bom spice-bom-plain"><p class="spice-bom-summary" dir="auto">3 parts in 3 rows<\/p><table class="spice-bom-table">[\s\S]*?<\/table><\/div><pre><code class="language-spice" dir="auto">V1 in 0 5\n/);
+  assert.match(mixed, /<td class="spice-bom-qty">1<\/td><td class="spice-bom-refs">R1<\/td><td class="spice-bom-type">resistor<\/td><td class="spice-bom-value">10k<\/td>/);
   assert.match(mixed, /<\/div><pre><code class="language-spice" dir="auto">V1 in 0 5\nR1 in out 10k\nC1 out 0 100n\n<\/code><\/pre>\n<\/div>/);
   assert.match(mixed, /<\/div><pre><code class="language-spice" dir="auto">M1 out in vdd vdd pch\nM2 out in 0 0 nch\n\.model nch NMOS\n\.model pch PMOS\n<\/code><\/pre>\n<\/div>/);
   assert.equal((mixed.match(/<div class="spice-fence /g) ?? []).length, 2, 'one wrapper per claimed fence, none for delegated ones');
@@ -74,14 +78,17 @@ exports.run = async () => {
   const broken = await draw('Before\n\n' + fence('spice', 'R1 a b 1k\nQ1 a') + '\nAfter', /spice-error/);
   assert.match(broken, /<div class="spice-error" role="alert"><pre>Q1 needs 3 nodes; found 1\.\n\n2 │ Q1 a\n         \^<\/pre><\/div>/);
   assert.match(broken, /<p\b[^>]*>After<\/p>/);
-  assert.match(broken, /<div class="spice-rendering"><div class="spice-error" role="alert">[\s\S]*?<\/div>\n<\/div><pre><code class="language-spice" dir="auto">R1 a b 1k\nQ1 a\n<\/code><\/pre>\n<\/div>/, 'the error card is wrapped and keeps its source view');
+  assert.match(broken, /<div class="spice-rendering"><div class="spice-error" role="alert">[\s\S]*?<\/div>\n<\/div><div class="spice-bom spice-bom-plain"><div class="spice-bom-empty">The netlist did not read, so there are no parts\.<\/div><\/div><pre><code class="language-spice" dir="auto">R1 a b 1k\nQ1 a\n<\/code><\/pre>\n<\/div>/, 'the error card is wrapped and keeps its source view');
 
   // A circuit too dense to lay out times out promptly, and the next schematic still renders.
   const dense = fence('spice', mesh);
   assert.match(await render(dense), LOADING);
   await delay(500);
   const started = Date.now();
-  assert.match(await draw(dense, /spice-error/), /Layout took longer than 3 s \(spice\.layoutTimeout\)/);
+  const timedOut = await draw(dense, /spice-error/);
+  assert.match(timedOut, /Layout took longer than 3 s \(spice\.layoutTimeout\)/);
+  // The netlist was read before layout overran, so the BOM view still has its table.
+  assert.match(timedOut, /<p class="spice-bom-summary" dir="auto">200 parts in 1 row<\/p>/);
   assert.ok(Date.now() - started < 6000, 'timeout returns promptly');
   await draw(fence('spice', 'R1 a 0 1k'));
 
@@ -97,7 +104,32 @@ exports.run = async () => {
 
   await includedFiles(render);
   await dialects(render);
+  await bomStyle(render);
 };
+
+/** The renderer version, and the `spice.bomStyle` setting reaching the BOM slot. */
+async function bomStyle(render) {
+  const extension = vscode.extensions.getExtension('ReoX86.spice-schematic-preview');
+  // Resolved from the extension under test, so a packaged VSIX is checked against its own copy.
+  const renderer = require(require.resolve('@reonarudo/spice-renderer/package.json', { paths: [extension.extensionPath] }));
+  assert.equal(renderer.version, '1.1.0');
+  const declared = extension.packageJSON.contributes.configuration.properties['spice.bomStyle'];
+  assert.deepEqual(declared.enum, ['plain', 'compact', 'card']);
+  assert.equal(declared.default, 'plain');
+  const configuration = vscode.workspace.getConfiguration('spice');
+  const styled = fence('spice', 'R5 a 0 1k\nR6 a 0 1K');
+  assert.match(await settled(render, styled, /spice-bom-table/), /<div class="spice-bom spice-bom-plain"><p class="spice-bom-summary" dir="auto">2 parts in 1 row<\/p>/);
+  try {
+    for (const style of ['compact', 'card']) {
+      await configuration.update('bomStyle', style, vscode.ConfigurationTarget.Global);
+      await settled(render, styled, new RegExp(`<div class="spice-bom spice-bom-${style}">`));
+    }
+    await configuration.update('bomStyle', 'fancy', vscode.ConfigurationTarget.Global);
+    await settled(render, styled, /<div class="spice-bom spice-bom-plain">/);
+  } finally {
+    await configuration.update('bomStyle', undefined, vscode.ConfigurationTarget.Global);
+  }
+}
 
 /** The `dialect` attribute and the `spice.dialect` setting reach the renderer. */
 async function dialects(render) {

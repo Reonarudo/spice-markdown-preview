@@ -68,13 +68,14 @@ svg.spice {
   display: block;
 }
 
-/* In source view VS Code's copy button, injected inside our <pre>, moves 36px inline-start so it
-   and the toggle share one row (8 + 28 + 8). Depends on VS Code's class name: accepted risk. */
+/* In source view VS Code's copy button, injected inside our <pre>, moves inline-start past both
+   buttons so the three share one row (8 + 28 + 8 + 28 + 8; docs/bom-view-spec.md section 7).
+   Depends on VS Code's class name: accepted risk. */
 .spice-fence[data-view="source"] > pre > .code-block-copy-button {
-  right: 44px;
+  right: 80px;
 }
 
-/* In a right-to-left container the toggle sits at the left, so the copy button keeps its place. */
+/* In a right-to-left container both buttons sit at the left, so the copy button keeps its place. */
 .spice-fence[data-view="source"]:dir(rtl) > pre > .code-block-copy-button {
   right: 8px;
 }
@@ -131,4 +132,173 @@ svg.spice {
 
 .spice-fence[data-view="source"] .spice-toggle .spice-icon-graph {
   display: inline;
+}
+
+/* ---- The BOM view (docs/bom-view-spec.md). Three views, one attribute: absent (rendering),
+   "source", "bom". Exactly one slot shows. ---- */
+.spice-fence > .spice-bom {
+  display: none;
+}
+
+.spice-fence[data-view="bom"] > .spice-rendering {
+  display: none;
+}
+
+.spice-fence[data-view="bom"] > .spice-bom {
+  display: block;
+}
+
+/* The BOM button: the toggle's box, 36px inline-start of it. The toggle never moves. */
+.spice-bom-button {
+  position: absolute;
+  inset-block-start: 8px;
+  inset-inline-end: 44px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, .35));
+  border-radius: 4px;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+  color: var(--vscode-editor-foreground);
+  cursor: pointer;
+  opacity: 1;
+  z-index: 1;
+}
+
+.spice-bom-button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.spice-bom-button:active {
+  background: var(--vscode-toolbar-activeBackground);
+}
+
+.spice-bom-button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+
+.spice-bom-button svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* The glyph names the view the click leads to: list everywhere but in BOM view, graph there. */
+.spice-bom-button .spice-icon-graph {
+  display: none;
+}
+
+.spice-fence[data-view="bom"] .spice-bom-button .spice-icon-list {
+  display: none;
+}
+
+.spice-fence[data-view="bom"] .spice-bom-button .spice-icon-graph {
+  display: inline;
+}
+
+/* The BOM slot, every style. */
+.spice-bom {
+  margin: 1em 0;
+}
+
+.spice-bom-empty {
+  padding: .5em 1em;
+  opacity: .7;
+  font-style: italic;
+}
+
+.spice-bom-summary {
+  display: none;
+}
+
+.spice-bom-table .spice-bom-qty {
+  text-align: end;
+}
+
+/* plain: VS Code's own markdown.css table (th border-bottom, td border-top, 5px 10px padding),
+   width auto, level with the buttons. A table wider than the column minus the two buttons wraps
+   earlier instead of running under them; a single unbreakable token wider than that still
+   overflows (accepted). */
+.spice-bom-plain .spice-bom-table {
+  max-width: calc(100% - 80px);
+}
+
+/* compact: a dense full-width table of our own, 36px below the buttons' row. */
+.spice-bom-compact {
+  padding-block-start: 36px;
+}
+
+.spice-bom-compact .spice-bom-table {
+  width: 100%;
+  font-size: .92em;
+  border: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, .35));
+}
+
+.spice-bom-compact .spice-bom-table th {
+  font-size: .85em;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  opacity: .8;
+  border-bottom: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, .35));
+  background: var(--vscode-textCodeBlock-background);
+}
+
+.spice-bom-compact .spice-bom-table td {
+  border-top: 1px solid var(--vscode-widget-border, rgba(127, 127, 127, .35));
+  padding: 3px 10px;
+  vertical-align: top;
+}
+
+.spice-bom-compact .spice-bom-table .spice-bom-refs,
+.spice-bom-compact .spice-bom-table .spice-bom-value,
+.spice-bom-compact .spice-bom-table .spice-bom-file {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: .95em;
+}
+
+.spice-bom-compact .spice-bom-table .spice-bom-type {
+  white-space: nowrap;
+}
+
+/* card: the table on the schematic's white card, the summary line first on the buttons' row. */
+.spice-bom-card {
+  background: #fff;
+  color: #000;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.spice-bom-card .spice-bom-summary {
+  display: block;
+  margin: 0 0 .5em;
+  line-height: 28px;
+  color: #555;
+}
+
+.spice-bom-card .spice-bom-table {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.spice-bom-card .spice-bom-table th {
+  border-bottom: 1px solid #999;
+  color: #000;
+}
+
+.spice-bom-card .spice-bom-table td {
+  border-top: 1px solid #ddd;
+  vertical-align: top;
+}
+
+.spice-bom-card .spice-bom-table .spice-bom-refs,
+.spice-bom-card .spice-bom-table .spice-bom-value,
+.spice-bom-card .spice-bom-table .spice-bom-file {
+  font-family: var(--vscode-editor-font-family, monospace);
+}
+
+.spice-bom-card .spice-bom-empty {
+  color: #555;
 }

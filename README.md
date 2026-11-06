@@ -430,6 +430,33 @@ an include line. A flipped fence stays flipped while you edit the document, afte
 the schematic again. The button is a reader's control: a fence cannot be written
 to open in source view.
 
+## The BOM view
+
+Beside it, a second button flips the fence to its **BOM view**: a table of the
+fence's parts, identical parts gathered into one row with a quantity and their
+references. The bridge rectifier from the examples reads:
+
+| Qty | References | Type | Value |
+| --: | --- | --- | --- |
+| 1 | VAC | voltage source | SIN(0 12 50) |
+| 4 | D1, D2, D3, D4 | diode | 1N4007 |
+| 1 | C1 | capacitor | 1000u |
+| 1 | RL | resistor | 1k |
+
+Parts are identical when their type, subcircuit name and value as written match,
+ignoring case and repeated spaces: `10K` and `10k` share a row, `10k` and
+`10000` do not, and `m=2` stays in the value rather than counting toward the
+quantity. Rows keep the netlist's order. A File column appears when the fence
+includes files, naming where each row's parts came from; elements inside a
+`.subckt` are not parts. A fence whose layout timed out still shows its table;
+one whose netlist does not read says so. Each button leads to its view and back
+to the schematic, and a fence left in BOM view stays there as a flipped fence
+does.
+
+The `spice.bomStyle` setting chooses how the table is drawn: `plain` (the
+default, the preview's own table styling), `compact` (a dense full-width table)
+or `card` (the table on the schematic's white card, with a summary line).
+
 ## Errors and limits
 
 A netlist error is shown in place of the schematic, quoting the line with a caret
@@ -453,7 +480,7 @@ npm run lint            # tsc --noEmit
 npm test                # node --test, after building
 npm run package         # vsce package
 npm run test:package    # the VSIX inside a real VS Code
-npm run test:preview    # the view toggle in a live preview, through Playwright
+npm run test:preview    # the view toggle and BOM view in a live preview, through Playwright
 npm run screenshots     # regenerate media/screenshots from examples/demo.md
 ```
 
