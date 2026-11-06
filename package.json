@@ -121,7 +121,7 @@
     "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
-    "@reonarudo/spice-renderer": "file:../../markdown-renderers/spice-renderer/reonarudo-spice-renderer-1.1.0.tgz"
+    "@reonarudo/spice-renderer": "https://github.com/Reonarudo/spice-renderer/releases/download/v1.1.0/reonarudo-spice-renderer-1.1.0.tgz"
   },
   "devDependencies": {
     "@types/markdown-it": "14.2.0",

@@ -58,7 +58,7 @@ export type RenderResult =
 
 ### 2.2 Stage boundary
 
-`renderNetlist` (`src/draw-netlist.ts`) gains an optional `onParsed({ bom, notes })` callback, called once after the netlist reader returns and before layout starts. It is internal to the two worker bundles (the library's `src/worker.ts`, the plugin's `src/worker/entry.ts`) and is **not** exported from `index.ts`. The library's worker uses it for the early write (2.3); the plugin's worker posts an interim message from it (section 9.2).
+`renderNetlist` (`src/draw-netlist.ts`) gains an optional `onParsed({ bom, notes })` callback, called once after the netlist reader returns and before layout starts. It is internal to the two worker bundles (the library's `src/worker.ts`, the plugin's `src/worker/entry.ts`) and is **not** exported from `index.ts`. The library's worker uses it for the early write (2.3); the plugin's worker posts an interim message from it (section 10.2).
 
 Aggregation is a pure function over the parts list, `aggregate(parts: Part[]): BomRow[]` in a new `src/bom.ts`, called from `renderNetlist` on the same list the drawing gets. The grouping rule lives and is tested once, here.
 
@@ -88,7 +88,7 @@ The two-phase reply is recorded as an ADR in spice-renderer (`docs/adr/0001-two-
 
 ### 2.4 Release
 
-Version 1.1.0, `CHANGELOG.md` entry, README section on the BOM rows (the worked examples of 3.5 are its illustration), tests per 10.1, the release tarball the hosts install from (`https://github.com/Reonarudo/spice-renderer/releases/download/v1.1.0/reonarudo-spice-renderer-1.1.0.tgz`, the URL form both hosts' `package.json` already use).
+Version 1.1.0, `CHANGELOG.md` entry, README section on the BOM rows (the worked examples of 3.5 are its illustration), tests per 11.1, the release tarball the hosts install from (`https://github.com/Reonarudo/spice-renderer/releases/download/v1.1.0/reonarudo-spice-renderer-1.1.0.tgz`, the URL form both hosts' `package.json` already use).
 
 ## 3. Aggregation
 

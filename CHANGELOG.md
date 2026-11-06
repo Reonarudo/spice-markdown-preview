@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.5.0 — unreleased
+## 0.5.0 — 2026-11-06
 
 - Every schematic carries a second button beside the view toggle that flips the
   fence to its **BOM view**: a table of the fence's parts, identical parts
